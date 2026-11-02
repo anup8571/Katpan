@@ -1,0 +1,1668 @@
+<meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Royal Katti / Maang Patta</title>
+</head>
+<body>
+
+  <div class="casino-app">
+    <!-- Top VIP Header -->
+    <header class="vip-header">
+      <div class="brand">
+        <span class="crown-icon">👑</span>
+        <div>
+          <h1>MAANG PATTA</h1>
+          <p>Split-Deck Royal Table</p>
+        </div>
+      </div>
+
+      <div class="wallet-group">
+        <button id="btn-sfx" class="sfx-pill" title="Toggle Sound">🔊</button>
+        <div class="stat-pill pot-pill" id="pot-pill-box">
+          <span class="label">BET</span>
+          <span class="val">🪙 <span id="current-bet">100</span></span>
+        </div>
+        <div class="stat-pill balance-pill" id="balance-pill-box">
+          <span class="label">BALANCE</span>
+          <span class="val">₹<span id="chip-balance">1000</span></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Dealer Announcement Ribbon -->
+    <div class="dealer-ribbon" id="status-text">
+      Dealer shuffled the deck! Place your bet &amp; split the deck.
+    </div>
+
+    <!-- Main Wood & Velvet Casino Table -->
+    <main class="table-rim">
+      <div class="table-felt" id="table-felt">
+        <div class="felt-watermark">♠ ♥ ROYAL BAITHAK ♦ ♣</div>
+
+        <!-- Upper Zone: Split Decks & Hukam / Point Card -->
+        <section class="shoe-zone">
+          <div class="split-piles">
+            <div class="deck-box" id="box-pile1">
+              <span class="box-tag">1st DECK</span>
+              <div class="card-stack-3d" id="pile1-slot"></div>
+              <div class="deck-counter" id="pile1-count">52</div>
+            </div>
+
+            <div class="deck-box" id="box-pile2">
+              <span class="box-tag">2nd DECK</span>
+              <div class="card-stack-3d" id="pile2-slot"></div>
+              <div class="deck-counter" id="pile2-count">0</div>
+            </div>
+          </div>
+
+          <div class="hukam-pedestal" id="hukam-pedestal">
+            <span class="hukam-tag">⭐ POINT CARD</span>
+            <div class="hukam-frame" id="point-card-slot">
+              <div class="slot-placeholder">Bottom of<br>2nd Deck</div>
+            </div>
+          </div>
+        </section>
+
+        <div class="table-divider">
+          <span>ANDAR / PLAYER</span>
+          <span class="vs-gem">♦</span>
+          <span>BAHAR / DEALER</span>
+        </div>
+
+        <!-- Lower Zone: Player vs Dealer Dealing Mats -->
+        <section class="battle-mats">
+          <!-- Player Mat -->
+          <div class="play-mat" id="player-zone">
+            <div class="mat-header">
+              <span class="mat-title">👤 PLAYER</span>
+              <span class="mat-badge" id="player-count">0</span>
+            </div>
+            <div class="fanned-pile" id="player-card-slot">
+              <div class="slot-placeholder">1st, 3rd, 5th...</div>
+            </div>
+            <div class="mini-log" id="player-history">Waiting for deal...</div>
+          </div>
+
+          <!-- Dealer Mat -->
+          <div class="play-mat" id="dealer-zone">
+            <div class="mat-header">
+              <span class="mat-title">🎩 DEALER</span>
+              <span class="mat-badge" id="dealer-count">0</span>
+            </div>
+            <div class="fanned-pile" id="dealer-card-slot">
+              <div class="slot-placeholder">2nd, 4th, 6th...</div>
+            </div>
+            <div class="mini-log" id="dealer-history">Waiting for deal...</div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- Bottom Casino Action Dock -->
+    <footer class="control-dock">
+      <!-- Phase 1: Betting & Deck Split -->
+      <div id="phase-cut" class="dock-panel">
+        <div class="chip-rack">
+          <span class="rack-label">Bet:</span>
+          <button class="chip chip-50" data-bet="50">50</button>
+          <button class="chip chip-100 active-chip" data-bet="100">100</button>
+          <button class="chip chip-250" data-bet="250">250</button>
+          <button class="chip chip-500" data-bet="500">500</button>
+        </div>
+
+        <div class="cutter-bar">
+          <div class="cutter-info">
+            <span>✂️ Cut Position (Live 3D Preview)</span>
+            <span id="cut-label">1st: 26 | 2nd: 26</span>
+          </div>
+          <input type="range" id="cut-slider" min="8" max="44" value="26">
+        </div>
+
+        <div class="action-row">
+          <button id="btn-random-cut" class="btn-casino btn-cyan">🎲 Random Cut</button>
+          <button id="btn-confirm-cut" class="btn-casino btn-gold">✂️ Split &amp; Reveal</button>
+        </div>
+      </div>
+
+      <!-- Phase 2: Dealing Cards -->
+      <div id="phase-deal" class="dock-panel hidden">
+        <div class="action-row">
+          <button id="btn-deal-one" class="btn-casino btn-cyan">👉 Deal 1 Card</button>
+          <button id="btn-auto-deal" class="btn-casino btn-emerald">⚡ Auto Deal</button>
+        </div>
+      </div>
+
+      <!-- Phase 3: Round Over -->
+      <div id="phase-over" class="dock-panel hidden">
+        <div class="action-row">
+          <button id="btn-new-round" class="btn-casino btn-gold">🔄 Shuffle &amp; Next Round</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 3D Flying Cards & Particle Overlay Stage -->
+  <div id="mp-fx-stage" class="mp-fx-stage"></div>
+
+</body>
+</html><style>* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: radial-gradient(circle at top, #1e1b4b 0%, #090d16 100%);
+  color: #f8fafc;
+  font-family: system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+  padding: 10px;
+  overflow-x: hidden;
+}
+
+.casino-app {
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* VIP Top Header */
+.vip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(145deg, #1e293b, #0f172a);
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crown-icon {
+  font-size: 22px;
+  filter: drop-shadow(0 2px 4px rgba(250, 204, 21, 0.5));
+  animation: crownFloat 3s ease-in-out infinite;
+}
+
+@keyframes crownFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-2.5px) rotate(5deg); }
+}
+
+.brand h1 {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  background: linear-gradient(to right, #fde047, #f59e0b);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.brand p {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.wallet-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sfx-pill {
+  background: #090d16;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  width: 34px;
+  height: 36px;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, border-color 0.2s ease;
+}
+
+.sfx-pill:active {
+  transform: scale(0.92);
+}
+
+.stat-pill {
+  background: #090d16;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 4px 10px;
+  text-align: right;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.25s ease;
+}
+
+.stat-pill.pill-bump {
+  transform: scale(1.14);
+  border-color: #4ade80;
+  box-shadow: 0 0 14px rgba(74, 222, 128, 0.45);
+}
+
+.balance-pill {
+  border-color: #eab308;
+}
+
+.stat-pill .label {
+  display: block;
+  font-size: 9px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.stat-pill .val {
+  font-size: 13px;
+  font-weight: 900;
+  color: #fde047;
+}
+
+/* Dealer Ribbon */
+.dealer-ribbon {
+  background: linear-gradient(90deg, rgba(15,23,42,0.9), rgba(30,41,59,0.95), rgba(15,23,42,0.9));
+  border-top: 1px solid rgba(250, 204, 21, 0.4);
+  border-bottom: 1px solid rgba(250, 204, 21, 0.4);
+  padding: 9px 12px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f8fafc;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+   gap: 4px;
+}
+
+/* Casino Wood Rim & Velvet Felt */
+.table-rim {
+  background: linear-gradient(145deg, #451a03, #78350f, #270e02);
+  padding: 8px;
+  border-radius: 26px;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.75),
+    inset 0 2px 4px rgba(255, 255, 255, 0.2);
+  border: 2px solid #b45309;
+}
+
+.table-felt {
+  background: radial-gradient(circle at 50% 35%, #15803d 0%, #064e3b 65%, #022c22 100%);
+  border-radius: 20px;
+  padding: 14px 10px;
+  border: 2px dashed rgba(250, 204, 21, 0.35);
+  box-shadow: inset 0 0 35px rgba(0, 0, 0, 0.85);
+  position: relative;
+  overflow: hidden;
+}
+
+.felt-watermark {
+  position: absolute;
+  top: 48%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.04);
+  letter-spacing: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Upper Zone: Split Decks & Point Card */
+.shoe-zone {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 6px 12px;
+}
+
+.split-piles {
+  display: flex;
+  gap: 14px;
+}
+
+.deck-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  padding: 6px;
+  border-radius: 12px;
+  transition: all 0.25s ease;
+}
+
+.deck-box.active-shoe {
+  background: rgba(250, 204, 21, 0.14);
+  box-shadow: 0 0 14px rgba(250, 204, 21, 0.4);
+}
+
+.box-tag {
+  font-size: 10px;
+  font-weight: 800;
+  color: #cbd5e1;
+  margin-bottom: 5px;
+  letter-spacing: 0.5px;
+}
+
+.card-stack-3d {
+  width: 64px;
+  aspect-ratio: 200 / 280;
+  position: relative;
+  filter: drop-shadow(0 6px 8px rgba(0,0,0,0.6));
+  perspective: 600px;
+}
+
+/* 3D Deck Thickness & Live Cut Split Halves */
+.mp-cut-bottom-half {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  box-shadow: 0 3px 0 #78350f, 0 5px 8px rgba(0,0,0,0.6);
+}
+
+.mp-cut-top-half {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), filter 0.16s ease;
+  will-change: transform;
+}
+
+.deck-counter {
+  position: absolute;
+  bottom: 0px;
+  right: 0px;
+  z-index: 6;
+  background: linear-gradient(135deg, #fde047, #ca8a04);
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1.5px solid #0f172a;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+/* Hukam / Point Card Pedestal */
+.hukam-pedestal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: radial-gradient(circle, rgba(250, 204, 21, 0.2) 0%, rgba(15, 23, 42, 0.55) 100%);
+  border: 1.5px solid #eab308;
+  border-radius: 14px;
+  padding: 6px 12px;
+  box-shadow: 0 0 20px rgba(234, 179, 8, 0.25);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.hukam-pedestal.pedestal-active {
+  box-shadow: 0 0 28px rgba(250, 204, 21, 0.65);
+}
+
+.hukam-tag {
+  font-size: 10px;
+  font-weight: 900;
+  color: #fde047;
+  margin-bottom: 5px;
+  letter-spacing: 0.6px;
+}
+
+.hukam-frame {
+  width: 72px;
+  aspect-ratio: 200 / 280;
+  filter: drop-shadow(0 5px 10px rgba(0,0,0,0.65));
+  position: relative;
+}
+
+/* Divider */
+.table-divider {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 900;
+  color: rgba(253, 224, 71, 0.7);
+  letter-spacing: 1px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  border-top: 1px solid rgba(250, 204, 21, 0.2);
+  border-bottom: 1px solid rgba(250, 204, 21, 0.2);
+}
+
+/* Battle Mats (Player vs Dealer) */
+.battle-mats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.play-mat {
+  background: rgba(6, 24, 18, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.play-mat.active-turn {
+  border-color: rgba(56, 189, 248, 0.85);
+  box-shadow: inset 0 0 16px rgba(56, 189, 248, 0.22);
+}
+
+.play-mat.winner-glow {
+  border-color: #fde047;
+  background: radial-gradient(circle, rgba(250, 204, 21, 0.32) 0%, rgba(6, 24, 18, 0.78) 100%);
+  box-shadow: 0 0 28px rgba(250, 204, 21, 0.75);
+  transform: translateY(-3px);
+}
+
+.mat-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.mat-title {
+  font-size: 12px;
+  font-weight: 900;
+  color: #f8fafc;
+}
+
+.mat-badge {
+  background: rgba(15, 23, 42, 0.8);
+  color: #38bdf8;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+/* Fanned 3D Card Pile on Table */
+.fanned-pile {
+  width: 96px;
+  height: 132px;
+  position: relative;
+  margin: 4px auto 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fanned-card {
+  position: absolute;
+  width: 86px;
+  aspect-ratio: 200 / 280;
+  filter: drop-shadow(0 5px 8px rgba(0,0,0,0.55));
+  transform: translateY(var(--ty, 0px)) translateX(var(--tx, 0px)) rotate(var(--rot, 0deg));
+  animation: cardSettle 0.16s ease-out forwards;
+}
+
+@keyframes cardSettle {
+  0% {
+    transform: translateY(var(--ty, 0px)) translateX(var(--tx, 0px)) rotate(var(--rot, 0deg)) scale(1.06);
+  }
+  100% {
+    transform: translateY(var(--ty, 0px)) translateX(var(--tx, 0px)) rotate(var(--rot, 0deg)) scale(1);
+  }
+}
+
+.slot-placeholder {
+  width: 100%;
+  height: 100%;
+  border: 1.5px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 700;
+  padding: 6px;
+}
+
+.mini-log {
+  width: 100%;
+  font-size: 11px;
+  color: #cbd5e1;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 22px;
+}
+
+/* Bottom Controls Dock */
+.control-dock {
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid #334155;
+  border-radius: 18px;
+  padding: 12px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+}
+
+.dock-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Casino Chips Rack */
+.chip-rack {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.rack-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #94a3b8;
+  margin-right: 4px;
+}
+
+.chip {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 3px dashed #ffffff;
+  font-weight: 900;
+  font-size: 11px;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.chip-50  { background: #2563eb; }
+.chip-100 { background: #dc2626; }
+.chip-250 { background: #16a34a; }
+.chip-500 { background: #9333ea; }
+
+.chip.active-chip {
+  transform: translateY(-4px) scale(1.08);
+  border-color: #fde047;
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.8);
+}
+
+/* Deck Cutter Slider */
+.cutter-bar {
+  background: rgba(15, 23, 42, 0.7);
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+}
+
+.cutter-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  color: #cbd5e1;
+  margin-bottom: 6px;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: #facc15;
+  cursor: pointer;
+}
+
+/* Action Buttons */
+.action-row {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-casino {
+  flex: 1;
+  border: none;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  transition: transform 0.1s ease, opacity 0.2s ease;
+}
+
+.btn-casino:active {
+  transform: translateY(2px);
+}
+
+.btn-casino:disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.btn-gold {
+  background: linear-gradient(180deg, #fde047 0%, #eab308 100%);
+  color: #0f172a;
+  box-shadow: 0 4px 0 #a16207;
+}
+
+.btn-cyan {
+  background: linear-gradient(180deg, #38bdf8 0%, #0284c7 100%);
+  color: #0f172a;
+  box-shadow: 0 4px 0 #0369a1;
+}
+
+.btn-emerald {
+  background: linear-gradient(180deg, #4ade80 0%, #16a34a 100%);
+  color: #052e16;
+  box-shadow: 0 4px 0 #15803d;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ==========================================================================
+   3D ANIMATION OVERLAY STAGE & FLYING ELEMENTS
+   ========================================================================== */
+.mp-fx-stage {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  perspective: 1100px;
+  overflow: hidden;
+}
+
+.mp-3d-card {
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform-style: preserve-3d;
+  will-change: transform, filter;
+  border-radius: 8px;
+}
+
+.mp-card-face,
+.mp-card-back {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mp-card-face {
+  transform: rotateY(180deg);
+}
+
+.mp-card-back {
+  transform: rotateY(0deg);
+}
+
+.mp-shockwave {
+  position: fixed;
+  border: 3px solid #fde047;
+  border-radius: 14px;
+  pointer-events: none;
+  z-index: 9998;
+  box-shadow: 0 0 24px #eab308, inset 0 0 14px #fde047;
+}
+
+.mp-particle {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 9999;
+  will-change: transform, opacity;
+}</style><script>// ============================================================================
+// 1. VECTOR PLAYING CARD ENGINE
+// ============================================================================
+const SUITS = {
+  spades: {
+    color: '#0f172a', symbol: '♠',
+    path: 'M25,6 C25,6 8,22 8,33 C8,40 13,44 19,44 C22,44 24,42 25,40 C24.5,45 22,50 18,52 L32,52 C28,50 25.5,45 25,40 C26,42 28,44 31,44 C37,44 42,40 42,33 C42,22 25,6 25,6 Z'
+  },
+  hearts: {
+    color: '#dc2626', symbol: '♥',
+    path: 'M25,14 C21,7 10,7 8,18 C6,29 25,42 25,48 C25,42 44,29 42,18 C40,7 29,7 25,14 Z'
+  },
+  diamonds: {
+    color: '#dc2626', symbol: '♦',
+    path: 'M25,6 L41,28 L25,50 L9,28 Z'
+  },
+  clubs: {
+    color: '#0f172a', symbol: '♣',
+    path: 'M25,10 C19,10 15,15 17,21 C11,21 7,26 7,32 C7,38 12,42 18,42 C21,42 23,40 24,38 C23.5,44 21,49 18,52 L32,52 C29,49 26.5,44 26,38 C27,40 29,42 32,42 C38,42 43,38 43,32 C43,26 39,21 33,21 C35,15 31,10 25,10 Z'
+  }
+};
+
+const PIP_LAYOUTS = {
+  'A':  [[100, 140, false, 1.85]],
+  '2':  [[100, 65, false], [100, 215, true]],
+  '3':  [[100, 65, false], [100, 140, false], [100, 215, true]],
+  '4':  [[65, 65, false], [135, 65, false], [65, 215, true], [135, 215, true]],
+  '5':  [[65, 65, false], [135, 65, false], [100, 140, false], [65, 215, true], [135, 215, true]],
+  '6':  [[65, 65, false], [135, 65, false], [65, 140, false], [135, 140, false], [65, 215, true], [135, 215, true]],
+  '7':  [[65, 65, false], [135, 65, false], [100, 102, false], [65, 140, false], [135, 140, false], [65, 215, true], [135, 215, true]],
+  '8':  [[65, 65, false], [135, 65, false], [100, 102, false], [65, 140, false], [135, 140, false], [100, 178, true], [65, 215, true], [135, 215, true]],
+  '9':  [[65, 65, false], [135, 65, false], [65, 115, false], [135, 115, false], [100, 140, false], [65, 165, true], [135, 165, true], [65, 215, true], [135, 215, true]],
+  '10': [[65, 65, false], [135, 65, false], [100, 90, false], [65, 115, false], [135, 115, false], [65, 165, true], [135, 165, true], [100, 190, true], [65, 215, true], [135, 215, true]]
+};
+
+function createCardSVG(rank, suit) {
+  const s = SUITS[suit];
+  const isFace = ['J', 'Q', 'K'].includes(rank);
+  let centerGraphic = '';
+
+  if (isFace) {
+    const badge = rank === 'K' ? '♚' : rank === 'Q' ? '♛' : '♞';
+    centerGraphic = `
+      <rect x="44" y="44" width="112" height="192" rx="10" fill="none" stroke="${s.color}" stroke-width="2" stroke-dasharray="6 3" opacity="0.3"/>
+      <circle cx="100" cy="140" r="46" fill="${s.color}" opacity="0.08"/>
+      <text x="100" y="130" font-family="Georgia, serif" font-size="48" fill="${s.color}" text-anchor="middle">${badge}</text>
+      <text x="100" y="178" font-family="Georgia, serif" font-weight="bold" font-size="42" fill="${s.color}" text-anchor="middle">${rank}</text>
+    `;
+  } else {
+    const pips = PIP_LAYOUTS[rank] || [];
+    centerGraphic = pips.map(([cx, cy, flip, customScale]) => {
+      const scale = customScale || 0.72;
+      const rotate = flip ? 180 : 0;
+      return `<g transform="translate(${cx}, ${cy}) rotate(${rotate}) scale(${scale}) translate(-25, -28)">
+        <path d="${s.path}" fill="${s.color}"/>
+      </g>`;
+    }).join('');
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" width="100%" height="100%">
+    <rect x="2" y="2" width="196" height="276" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
+    <g fill="${s.color}" font-family="system-ui, sans-serif" font-weight="900" text-anchor="middle">
+      <text x="27" y="38" font-size="25">${rank}</text>
+      <g transform="translate(27, 52) scale(0.38) translate(-25, -28)"><path d="${s.path}" fill="${s.color}"/></g>
+    </g>
+    <g transform="rotate(180, 100, 140)" fill="${s.color}" font-family="system-ui, sans-serif" font-weight="900" text-anchor="middle">
+      <text x="27" y="38" font-size="25">${rank}</text>
+      <g transform="translate(27, 52) scale(0.38) translate(-25, -28)"><path d="${s.path}" fill="${s.color}"/></g>
+    </g>
+    ${centerGraphic}
+  </svg>`;
+}
+
+function createCardBackSVG(primary = '#991b1b') {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" width="100%" height="100%">
+    <rect x="2" y="2" width="196" height="276" rx="16" fill="#fffbeb" stroke="#fcd34d" stroke-width="3"/>
+    <rect x="12" y="12" width="176" height="256" rx="10" fill="${primary}"/>
+    <rect x="18" y="18" width="164" height="244" rx="6" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="5 3"/>
+    <circle cx="100" cy="140" r="32" fill="${primary}" stroke="#fde047" stroke-width="2.5"/>
+    <path d="M100,116 L116,140 L100,164 L84,140 Z" fill="#fde047"/>
+  </svg>`;
+}
+
+// ============================================================================
+// 2. PROCEDURAL CASINO SOUND ENGINE (Web Audio API - No External Files)
+// ============================================================================
+const CasinoAudio = (() => {
+  let ctx = null;
+  let muted = false;
+
+  function getCtx() {
+    if (muted) return null;
+    if (!ctx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) ctx = new AudioCtx();
+    }
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  function playCardFlick(pitch = 1) {
+    const c = getCtx();
+    if (!c) return;
+    const now = c.currentTime;
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(280 * pitch, now);
+    osc.frequency.exponentialRampToValueAtTime(75, now + 0.065);
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
+    osc.connect(gain).connect(c.destination);
+    osc.start(now);
+    osc.stop(now + 0.07);
+  }
+
+  function playChipClick() {
+    const c = getCtx();
+    if (!c) return;
+    const now = c.currentTime;
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1950, now);
+    osc.frequency.exponentialRampToValueAtTime(920, now + 0.045);
+    gain.gain.setValueAtTime(0.15, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+    osc.connect(gain).connect(c.destination);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  }
+
+  function playHukamChime() {
+    const c = getCtx();
+    if (!c) return;
+    [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+      const now = c.currentTime + idx * 0.055;
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.14, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+      osc.connect(gain).connect(c.destination);
+      osc.start(now);
+      osc.stop(now + 0.34);
+    });
+  }
+
+  function playWinFanfare(isPlayerWin = true) {
+    const c = getCtx();
+    if (!c) return;
+    const notes = isPlayerWin
+      ? [523.25, 659.25, 783.99, 1046.5, 1318.5]
+      : [392.0, 349.23, 311.13, 261.63];
+    notes.forEach((freq, idx) => {
+      const now = c.currentTime + idx * 0.08;
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      osc.type = isPlayerWin ? 'triangle' : 'sawtooth';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.16, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+      osc.connect(gain).connect(c.destination);
+      osc.start(now);
+      osc.stop(now + 0.4);
+    });
+  }
+
+  function toggleMute() {
+    muted = !muted;
+    return muted;
+  }
+
+  return { playCardFlick, playChipClick, playHukamChime, playWinFanfare, toggleMute };
+})();
+
+// ============================================================================
+// 3. 3D CHOREOGRAPHY & PARTICLE ANIMATION ENGINE (MaangPattaFX)
+// ============================================================================
+const MaangPattaFX = (() => {
+  const stage = document.getElementById('mp-fx-stage');
+
+  function getRect(elOrSelector) {
+    const el = typeof elOrSelector === 'string'
+      ? document.querySelector(elOrSelector)
+      : elOrSelector;
+    return el
+      ? el.getBoundingClientRect()
+      : { left: window.innerWidth / 2, top: window.innerHeight / 2, width: 64, height: 90 };
+  }
+
+  function create3DCardNode(width, height, frontSVG, backSVG) {
+    const card = document.createElement('div');
+    card.className = 'mp-3d-card';
+    card.style.width = `${width}px`;
+    card.style.height = `${height}px`;
+
+    const back = document.createElement('div');
+    back.className = 'mp-card-back';
+    back.innerHTML = backSVG;
+
+    const face = document.createElement('div');
+    face.className = 'mp-card-face';
+    face.innerHTML = frontSVG;
+
+    card.appendChild(back);
+    card.appendChild(face);
+    return card;
+  }
+
+  // --- ANIMATION A: Riffle & Cascade Shuffle ---
+  async function animateShuffle(targetSelector = '#pile1-slot', cardCount = 14) {
+    const targetRect = getRect(targetSelector);
+    const tableRect = getRect('#table-felt');
+    const backSVG = createCardBackSVG('#991b1b');
+
+    const centerX = tableRect.left + tableRect.width / 2 - targetRect.width / 2;
+    const centerY = tableRect.top + tableRect.height * 0.34 - targetRect.height / 2;
+
+    const cards = [];
+    const promises = [];
+
+    for (let i = 0; i < cardCount; i++) {
+      const card = create3DCardNode(targetRect.width, targetRect.height, backSVG, backSVG);
+      stage.appendChild(card);
+      cards.push(card);
+
+      const isLeftPacket = i % 2 === 0;
+      const packetX = centerX + (isLeftPacket ? -56 : 56);
+      const packetRot = isLeftPacket ? -14 : 14;
+
+      setTimeout(() => CasinoAudio.playCardFlick(0.85 + (i % 5) * 0.06), i * 24);
+
+      const anim = card.animate([
+        {
+          transform: `translate3d(${targetRect.left}px, ${targetRect.top}px, 0px) rotateZ(0deg)`,
+          filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.4))'
+        },
+        {
+          transform: `translate3d(${packetX}px, ${centerY}px, 35px) rotateZ(${packetRot}deg) rotateX(18deg)`,
+          offset: 0.32
+        },
+        {
+          transform: `translate3d(${centerX}px, ${centerY - 12}px, ${65 + i * 2}px) rotateZ(${(i % 3 - 1) * 3}deg) rotateX(28deg)`,
+          filter: 'drop-shadow(0 18px 20px rgba(0,0,0,0.65))',
+          offset: 0.66
+        },
+        {
+          transform: `translate3d(${targetRect.left}px, ${targetRect.top - (i * 0.35)}px, 0px) rotateZ(0deg) rotateX(0deg)`,
+          filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.5))'
+        }
+      ], {
+        duration: 640,
+        delay: i * 22,
+        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        fill: 'forwards'
+      });
+
+      promises.push(anim.finished);
+    }
+
+    await Promise.all(promises);
+    cards.forEach(c => c.remove());
+  }
+
+  // --- ANIMATION B: Live 3D Cut Slider Preview ---
+  function previewDeckCut(cutValue, totalCards = 52) {
+    const pile1Slot = document.getElementById('pile1-slot');
+    if (!pile1Slot) return;
+
+    const backSVG = createCardBackSVG('#991b1b');
+    let bottomHalf = pile1Slot.querySelector('.mp-cut-bottom-half');
+    let topHalf = pile1Slot.querySelector('.mp-cut-top-half');
+
+    if (!bottomHalf || !topHalf) {
+      pile1Slot.innerHTML = `
+        <div class="mp-cut-bottom-half">${backSVG}</div>
+        <div class="mp-cut-top-half">${backSVG}</div>
+      `;
+      topHalf = pile1Slot.querySelector('.mp-cut-top-half');
+    }
+
+    const ratio = cutValue / totalCards;
+    const liftY = -6 - (ratio * 11);
+    const shiftX = 5 + (ratio * 9);
+    const tiltDeg = 2.5 + (ratio * 5.5);
+
+    topHalf.style.transform = `translate3d(${shiftX}px, ${liftY}px, 18px) rotateZ(${tiltDeg}deg)`;
+    topHalf.style.filter = `drop-shadow(-4px ${Math.abs(liftY)}px 7px rgba(0,0,0,0.65))`;
+  }
+
+  // --- ANIMATION C: Split Deck + Bottom Point Card 3D Flip Reveal ---
+  async function animateSplitAndReveal(pointCardObj, onSplitLanded) {
+    const pile1Rect = getRect('#pile1-slot');
+    const pile2Rect = getRect('#pile2-slot');
+    const pointRect = getRect('#point-card-slot');
+
+    const redBack = createCardBackSVG('#991b1b');
+    const blueBack = createCardBackSVG('#1e3a8a');
+
+    // Stage 1: Arc the cut packet from 1st Deck to 2nd Deck
+    const packetLayers = 5;
+    const flyingStack = [];
+    const splitPromises = [];
+
+    for (let i = 0; i < packetLayers; i++) {
+      const card = create3DCardNode(pile1Rect.width, pile1Rect.height, blueBack, redBack);
+      stage.appendChild(card);
+      flyingStack.push(card);
+
+      const layerOffset = i * -1.4;
+      setTimeout(() => CasinoAudio.playCardFlick(1.05 + i * 0.05), i * 20);
+
+      const anim = card.animate([
+        {
+          transform: `translate3d(${pile1Rect.left + 8}px, ${pile1Rect.top - 10 + layerOffset}px, 20px) rotateZ(5deg) scale(1)`,
+          filter: 'drop-shadow(0 12px 14px rgba(0,0,0,0.6))'
+        },
+        {
+          transform: `translate3d(${(pile1Rect.left + pile2Rect.left) / 2}px, ${pile1Rect.top - 42 + layerOffset}px, 90px) rotateZ(-8deg) rotateX(22deg) scale(1.12)`,
+          filter: 'drop-shadow(0 26px 24px rgba(0,0,0,0.75))',
+          offset: 0.5
+        },
+        {
+          transform: `translate3d(${pile2Rect.left}px, ${pile2Rect.top + layerOffset}px, 0px) rotateZ(0deg) rotateX(0deg) scale(1)`,
+          filter: 'drop-shadow(0 5px 8px rgba(0,0,0,0.5))'
+        }
+      ], {
+        duration: 440,
+        delay: i * 18,
+        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        fill: 'forwards'
+      });
+
+      splitPromises.push(anim.finished);
+    }
+
+    await Promise.all(splitPromises);
+    flyingStack.forEach(c => c.remove());
+
+    if (typeof onSplitLanded === 'function') onSplitLanded();
+
+    // Stage 2: Extract bottom-most card from underneath 2nd Deck & 3D Flip onto Hukam Pedestal
+    const hukamCard = create3DCardNode(pointRect.width, pointRect.height, pointCardObj.svg, blueBack);
+    stage.appendChild(hukamCard);
+
+    const midX = (pile2Rect.left + pointRect.left) / 2 - 12;
+    const midY = Math.min(pile2Rect.top, pointRect.top) - 26;
+
+    CasinoAudio.playCardFlick(0.9);
+    setTimeout(() => CasinoAudio.playHukamChime(), 340);
+
+    const revealAnim = hukamCard.animate([
+      {
+        transform: `translate3d(${pile2Rect.left}px, ${pile2Rect.top + 6}px, -10px) scale(0.88) rotateY(0deg) rotateZ(0deg)`,
+        filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.6))'
+      },
+      {
+        transform: `translate3d(${pile2Rect.left + 16}px, ${pile2Rect.top + 36}px, 45px) scale(0.96) rotateY(25deg) rotateZ(-10deg)`,
+        filter: 'drop-shadow(0 16px 20px rgba(0,0,0,0.7))',
+        offset: 0.28
+      },
+      {
+        transform: `translate3d(${midX}px, ${midY}px, 145px) scale(1.32) rotateY(180deg) rotateX(-12deg) rotateZ(4deg)`,
+        filter: 'drop-shadow(0 0 28px rgba(250, 204, 21, 0.95)) drop-shadow(0 25px 30px rgba(0,0,0,0.8))',
+        offset: 0.68
+      },
+      {
+        transform: `translate3d(${pointRect.left}px, ${pointRect.top}px, 0px) scale(1) rotateY(180deg) rotateX(0deg) rotateZ(0deg)`,
+        filter: 'drop-shadow(0 5px 10px rgba(0,0,0,0.65))'
+      }
+    ], {
+      duration: 740,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      fill: 'forwards'
+    });
+
+    await revealAnim.finished;
+    triggerShockwave('#point-card-slot', '#fde047');
+    hukamCard.remove();
+  }
+
+  // --- ANIMATION D: 3D Card Deal Flight with Mid-Air Flip ---
+  async function animateDealCard(cardObj, options = {}) {
+    const {
+      fromShoe = 1,
+      toSide = 'player',
+      cardCountOnMat = 1,
+      isWinningCard = false
+    } = options;
+
+    const sourceSelector = fromShoe === 1 ? '#pile1-slot' : '#pile2-slot';
+    const targetSelector = toSide === 'player' ? '#player-card-slot' : '#dealer-card-slot';
+
+    const srcRect = getRect(sourceSelector);
+    const dstRect = getRect(targetSelector);
+
+    const backColor = fromShoe === 1 ? '#991b1b' : '#1e3a8a';
+    const backSVG = createCardBackSVG(backColor);
+
+    const cardW = 86;
+    const cardH = cardW * (280 / 200);
+    const offsetIndex = Math.min(cardCountOnMat - 1, 6);
+    const fanTx = (offsetIndex - 2) * 2.5;
+    const fanTy = (offsetIndex - 2) * 1.5;
+    const fanRot = ((cardCountOnMat * 7) % 11) - 5;
+
+    const endX = dstRect.left + (dstRect.width - cardW) / 2 + fanTx;
+    const endY = dstRect.top + (dstRect.height - cardH) / 2 + fanTy;
+
+    const startScale = srcRect.width / cardW;
+    const startX = srcRect.left - (cardW - srcRect.width) / 2;
+    const startY = srcRect.top - (cardH - srcRect.height) / 2;
+
+    const flyingCard = create3DCardNode(cardW, cardH, cardObj.svg, backSVG);
+    stage.appendChild(flyingCard);
+
+    CasinoAudio.playCardFlick(toSide === 'player' ? 1.08 : 0.94);
+
+    const midX = (startX + endX) / 2 + (toSide === 'player' ? -16 : 16);
+    const midY = (startY + endY) / 2 - 44;
+
+    const keyframes = isWinningCard
+      ? [
+          {
+            transform: `translate3d(${startX}px, ${startY}px, 0px) scale(${startScale}) rotateY(0deg) rotateZ(0deg)`,
+            filter: 'drop-shadow(0 6px 8px rgba(0,0,0,0.5))'
+          },
+          {
+            transform: `translate3d(${midX}px, ${midY}px, 130px) scale(1.26) rotateY(180deg) rotateX(14deg) rotateZ(${toSide === 'player' ? -8 : 8}deg)`,
+            filter: 'drop-shadow(0 0 26px #fde047) drop-shadow(0 24px 24px rgba(0,0,0,0.8))',
+            offset: 0.6
+          },
+          {
+            transform: `translate3d(${endX}px, ${endY}px, 0px) scale(1) rotateY(180deg) rotateX(0deg) rotateZ(${fanRot}deg)`,
+            filter: 'drop-shadow(0 0 18px #fde047) drop-shadow(0 5px 8px rgba(0,0,0,0.6))'
+          }
+        ]
+      : [
+          {
+            transform: `translate3d(${startX}px, ${startY}px, 0px) scale(${startScale}) rotateY(0deg) rotateZ(0deg)`,
+            filter: 'drop-shadow(0 5px 6px rgba(0,0,0,0.45))'
+          },
+          {
+            transform: `translate3d(${midX}px, ${midY}px, 80px) scale(1.05) rotateY(105deg) rotateX(16deg) rotateZ(${toSide === 'player' ? -10 : 10}deg)`,
+            filter: 'drop-shadow(0 18px 16px rgba(0,0,0,0.65))',
+            offset: 0.52
+          },
+          {
+            transform: `translate3d(${endX}px, ${endY}px, 0px) scale(1) rotateY(180deg) rotateX(0deg) rotateZ(${fanRot}deg)`,
+            filter: 'drop-shadow(0 5px 8px rgba(0,0,0,0.55))'
+          }
+        ];
+
+    const anim = flyingCard.animate(keyframes, {
+      duration: isWinningCard ? 540 : 310,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      fill: 'forwards'
+    });
+
+    await anim.finished;
+    flyingCard.remove();
+  }
+
+  // --- ANIMATION E: Shockwave & Victory Chip Shower ---
+  function triggerShockwave(selectorOrEl, color = '#fde047') {
+    const rect = getRect(selectorOrEl);
+    const ring = document.createElement('div');
+    ring.className = 'mp-shockwave';
+    ring.style.borderColor = color;
+    ring.style.left = `${rect.left}px`;
+    ring.style.top = `${rect.top}px`;
+    ring.style.width = `${rect.width}px`;
+    ring.style.height = `${rect.height}px`;
+    stage.appendChild(ring);
+
+    ring.animate([
+      { transform: 'scale(0.95)', opacity: 1 },
+      { transform: 'scale(1.65)', opacity: 0 }
+    ], {
+      duration: 540,
+      easing: 'cubic-bezier(0.16, 1, 0.3, 1)'
+    }).onfinish = () => ring.remove();
+  }
+
+  async function animateWinCelebration(winnerSide = 'player') {
+    const zoneSelector = winnerSide === 'player' ? '#player-zone' : '#dealer-zone';
+    const zoneRect = getRect(zoneSelector);
+    const balanceRect = getRect('#balance-pill-box');
+
+    CasinoAudio.playWinFanfare(winnerSide === 'player');
+    triggerShockwave(zoneSelector, winnerSide === 'player' ? '#4ade80' : '#f87171');
+    triggerShockwave('#point-card-slot', '#fde047');
+
+    const colors = ['#fde047', '#4ade80', '#38bdf8', '#f43f5e', '#a855f7'];
+    const originX = zoneRect.left + zoneRect.width / 2;
+    const originY = zoneRect.top + zoneRect.height / 2;
+    const promises = [];
+
+    for (let i = 0; i < 26; i++) {
+      const p = document.createElement('div');
+      p.className = 'mp-particle';
+      const isChip = i < 10;
+
+      if (isChip) {
+        p.style.width = '22px';
+        p.style.height = '22px';
+        p.style.borderRadius = '50%';
+        p.style.background = winnerSide === 'player' ? '#eab308' : '#ef4444';
+        p.style.border = '2.5px dashed #fff';
+        p.style.boxShadow = '0 4px 10px rgba(0,0,0,0.5)';
+      } else {
+        p.style.width = '8px';
+        p.style.height = '14px';
+        p.style.borderRadius = '2px';
+        p.style.background = colors[i % colors.length];
+      }
+
+      stage.appendChild(p);
+
+      const angle = (Math.PI * 2 * i) / 26 + (Math.random() - 0.5) * 0.35;
+      const dist = 55 + Math.random() * 105;
+      const burstX = originX + Math.cos(angle) * dist;
+      const burstY = originY + Math.sin(angle) * dist - 25;
+
+      const destX = (isChip && winnerSide === 'player')
+        ? balanceRect.left + balanceRect.width / 2
+        : burstX + (Math.random() - 0.5) * 35;
+      const destY = (isChip && winnerSide === 'player')
+        ? balanceRect.top + balanceRect.height / 2
+        : burstY + 135;
+
+      const anim = p.animate([
+        {
+          transform: `translate3d(${originX}px, ${originY}px, 0) scale(0.3) rotate(0deg)`,
+          opacity: 1
+        },
+        {
+          transform: `translate3d(${burstX}px, ${burstY}px, 60px) scale(1.15) rotate(${180 + i * 25}deg)`,
+          opacity: 1,
+          offset: 0.45
+        },
+        {
+          transform: `translate3d(${destX}px, ${destY}px, 0) scale(${isChip ? 0.45 : 0.75}) rotate(${360 + i * 45}deg)`,
+          opacity: isChip ? 0.85 : 0
+        }
+      ], {
+        duration: isChip ? 780 : 900,
+        delay: (i % 6) * 22,
+        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        fill: 'forwards'
+      });
+
+      promises.push(anim.finished.then(() => p.remove()));
+    }
+
+    await Promise.all(promises);
+  }
+
+  // --- ANIMATION F: Smooth Rolling Balance Counter ---
+  function animateNumber(el, fromVal, toVal, duration = 520) {
+    const pillBox = document.getElementById('balance-pill-box');
+    if (pillBox) {
+      pillBox.classList.add('pill-bump');
+      setTimeout(() => pillBox.classList.remove('pill-bump'), 450);
+    }
+
+    const start = performance.now();
+    function tick(now) {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = Math.round(fromVal + (toVal - fromVal) * eased);
+      if (progress < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  return {
+    animateShuffle,
+    previewDeckCut,
+    animateSplitAndReveal,
+    animateDealCard,
+    animateWinCelebration,
+    triggerShockwave,
+    animateNumber
+  };
+})();
+
+// ============================================================================
+// 4. GAME STATE & SPLIT-DECK CONTROLLER
+// ============================================================================
+let mainDeck = [];
+let firstDeck = [];
+let secondDeck = [];
+let pointCard = null;
+let turnIndex = 0; // Even = Player, Odd = Dealer
+let playerCards = [];
+let dealerCards = [];
+let autoTimer = null;
+let isAnimating = false;
+
+let balance = 1000;
+let currentBet = 100;
+
+// DOM Elements
+const statusText = document.getElementById('status-text');
+const chipBalanceEl = document.getElementById('chip-balance');
+const currentBetEl = document.getElementById('current-bet');
+
+const boxPile1 = document.getElementById('box-pile1');
+const boxPile2 = document.getElementById('box-pile2');
+const pile1Slot = document.getElementById('pile1-slot');
+const pile2Slot = document.getElementById('pile2-slot');
+const pile1Count = document.getElementById('pile1-count');
+const pile2Count = document.getElementById('pile2-count');
+const pointSlot = document.getElementById('point-card-slot');
+const hukamPedestal = document.getElementById('hukam-pedestal');
+
+const playerZone = document.getElementById('player-zone');
+const dealerZone = document.getElementById('dealer-zone');
+const playerSlot = document.getElementById('player-card-slot');
+const dealerSlot = document.getElementById('dealer-card-slot');
+const playerCount = document.getElementById('player-count');
+const dealerCount = document.getElementById('dealer-count');
+const playerHistory = document.getElementById('player-history');
+const dealerHistory = document.getElementById('dealer-history');
+
+const cutSlider = document.getElementById('cut-slider');
+const cutLabel = document.getElementById('cut-label');
+const phaseCut = document.getElementById('phase-cut');
+const phaseDeal = document.getElementById('phase-deal');
+const phaseOver = document.getElementById('phase-over');
+
+function stopAutoDeal() {
+  if (autoTimer) {
+    clearTimeout(autoTimer);
+    autoTimer = null;
+  }
+}
+
+function buildAndShuffleDeck() {
+  const suits = ['spades', 'hearts', 'diamonds', 'clubs'];
+  const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+  const deck = [];
+
+  for (const s of suits) {
+    for (const r of ranks) {
+      deck.push({
+        rank: r,
+        suit: s,
+        label: `${r}${SUITS[s].symbol}`,
+        svg: createCardSVG(r, s)
+      });
+    }
+  }
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+
+async function initRound() {
+  if (isAnimating) return;
+  stopAutoDeal();
+  isAnimating = true;
+
+  mainDeck = buildAndShuffleDeck();
+  firstDeck = [];
+  secondDeck = [];
+  pointCard = null;
+  turnIndex = 0;
+  playerCards = [];
+  dealerCards = [];
+
+  playerZone.classList.remove('winner-glow', 'active-turn');
+  dealerZone.classList.remove('winner-glow', 'active-turn');
+  boxPile1.classList.remove('active-shoe');
+  boxPile2.classList.remove('active-shoe');
+  hukamPedestal.classList.remove('pedestal-active');
+
+  pile1Slot.innerHTML = `<div class="slot-placeholder">Shuffling</div>`;
+  pile2Slot.innerHTML = `<div class="slot-placeholder">Split Pending</div>`;
+  pointSlot.innerHTML = `<div class="slot-placeholder">Bottom of<br>2nd Deck</div>`;
+  playerSlot.innerHTML = `<div class="slot-placeholder">1st, 3rd, 5th...</div>`;
+  dealerSlot.innerHTML = `<div class="slot-placeholder">2nd, 4th, 6th...</div>`;
+
+  pile1Count.textContent = '52';
+  pile2Count.textContent = '0';
+  playerCount.textContent = '0';
+  dealerCount.textContent = '0';
+  playerHistory.textContent = 'Waiting for deal...';
+  dealerHistory.textContent = 'Waiting for deal...';
+
+  statusText.innerHTML = '🔀 Dealer is riffle-shuffling the royal deck...';
+  phaseCut.classList.remove('hidden');
+  phaseDeal.classList.add('hidden');
+  phaseOver.classList.add('hidden');
+
+  await MaangPattaFX.animateShuffle('#pile1-slot', 14);
+
+  pile1Slot.innerHTML = createCardBackSVG('#991b1b');
+  updateCutPreview();
+  statusText.innerHTML = 'Dealer shuffled! Choose your bet &amp; split the deck.';
+  isAnimating = false;
+}
+
+function updateCutPreview() {
+  const k = parseInt(cutSlider.value, 10);
+  cutLabel.textContent = `1st Deck: ${k} | 2nd Deck: ${52 - k}`;
+  MaangPattaFX.previewDeckCut(k, 52);
+}
+
+async function performSplit(cutIndex) {
+  if (isAnimating) return;
+  isAnimating = true;
+
+  firstDeck = mainDeck.slice(0, cutIndex);
+  secondDeck = mainDeck.slice(cutIndex);
+
+  // Pull bottom-most card of 2nd deck as Player's Point Card
+  pointCard = secondDeck.pop();
+
+  phaseCut.classList.add('hidden');
+  statusText.innerHTML = '✂️ Splitting deck &amp; revealing bottom Point Card...';
+
+  // Reset 1st deck visual before flying top packet
+  pile1Slot.innerHTML = createCardBackSVG('#991b1b');
+  pile1Count.textContent = firstDeck.length;
+
+  await MaangPattaFX.animateSplitAndReveal(pointCard, () => {
+    pile2Slot.innerHTML = createCardBackSVG('#1e3a8a');
+    pile2Count.textContent = secondDeck.length;
+  });
+
+  pointSlot.innerHTML = `<div class="fanned-card" style="position:relative; width:100%;">${pointCard.svg}</div>`;
+  hukamPedestal.classList.add('pedestal-active');
+
+  boxPile1.classList.add('active-shoe');
+  playerZone.classList.add('active-turn');
+
+  statusText.innerHTML = `Target Rank: <b style="color:#fde047">${pointCard.rank}</b> (${pointCard.label}) -- Dealing to Player first!`;
+  phaseDeal.classList.remove('hidden');
+  isAnimating = false;
+}
+
+function appendFannedCard(container, cardObj, count) {
+  if (count === 1) container.innerHTML = '';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'fanned-card';
+
+  const offsetIndex = Math.min(count - 1, 6);
+  const tx = (offsetIndex - 2) * 2.5;
+  const ty = (offsetIndex - 2) * 1.5;
+  const rot = ((count * 7) % 11) - 5;
+
+  wrapper.style.setProperty('--tx', `${tx}px`);
+  wrapper.style.setProperty('--ty', `${ty}px`);
+  wrapper.style.setProperty('--rot', `${rot}deg`);
+  wrapper.innerHTML = cardObj.svg;
+
+  container.appendChild(wrapper);
+  if (container.children.length > 6) {
+    container.removeChild(container.firstChild);
+  }
+}
+
+async function dealNextCard() {
+  if (!pointCard || isAnimating) return;
+  isAnimating = true;
+
+  let sourceLabel = '1st Deck';
+  let fromShoe = 1;
+  let drawnCard = null;
+
+  if (firstDeck.length > 0) {
+    drawnCard = firstDeck.shift();
+    fromShoe = 1;
+    boxPile1.classList.add('active-shoe');
+    boxPile2.classList.remove('active-shoe');
+    if (firstDeck.length === 0) {
+      pile1Slot.innerHTML = `<div class="slot-placeholder">Empty</div>`;
+    }
+  } else if (secondDeck.length > 0) {
+    sourceLabel = '2nd Deck';
+    fromShoe = 2;
+    drawnCard = secondDeck.shift();
+    boxPile1.classList.remove('active-shoe');
+    boxPile2.classList.add('active-shoe');
+    if (secondDeck.length === 0) {
+      pile2Slot.innerHTML = `<div class="slot-placeholder">Empty</div>`;
+    }
+  } else {
+    isAnimating = false;
+    return;
+  }
+
+  pile1Count.textContent = firstDeck.length;
+  pile2Count.textContent = secondDeck.length;
+
+  const isPlayerSide = (turnIndex % 2 === 0);
+  const toSide = isPlayerSide ? 'player' : 'dealer';
+  const isMatch = (drawnCard.rank === pointCard.rank);
+  turnIndex++;
+
+  // 3D Mid-Air Flip & Flight from Active Shoe to Player/Dealer Mat
+  await MaangPattaFX.animateDealCard(drawnCard, {
+    fromShoe,
+    toSide,
+    cardCountOnMat: isPlayerSide ? playerCards.length + 1 : dealerCards.length + 1,
+    isWinningCard: isMatch
+  });
+
+  if (isPlayerSide) {
+    playerCards.unshift(drawnCard);
+    appendFannedCard(playerSlot, drawnCard, playerCards.length);
+    playerCount.textContent = playerCards.length;
+    playerHistory.textContent = playerCards.map(c => c.label).join('  ');
+    playerZone.classList.remove('active-turn');
+    dealerZone.classList.add('active-turn');
+  } else {
+    dealerCards.unshift(drawnCard);
+    appendFannedCard(dealerSlot, drawnCard, dealerCards.length);
+    dealerCount.textContent = dealerCards.length;
+    dealerHistory.textContent = dealerCards.map(c => c.label).join('  ');
+    dealerZone.classList.remove('active-turn');
+    playerZone.classList.add('active-turn');
+  }
+
+  if (isMatch) {
+    stopAutoDeal();
+    playerZone.classList.remove('active-turn');
+    dealerZone.classList.remove('active-turn');
+
+    const previousBalance = balance;
+
+    if (isPlayerSide) {
+      playerZone.classList.add('winner-glow');
+      balance += currentBet;
+      statusText.innerHTML = `🎉 <b style="color:#4ade80">PLAYER WINS +₹${currentBet}!</b> Matching <b>${drawnCard.label}</b> landed on Player side (${sourceLabel})!`;
+    } else {
+      dealerZone.classList.add('winner-glow');
+      balance = Math.max(0, balance - currentBet);
+      statusText.innerHTML = `🎩 <b style="color:#f87171">DEALER WINS -₹${currentBet}!</b> Matching <b>${drawnCard.label}</b> landed on Dealer side (${sourceLabel})!`;
+    }
+
+    MaangPattaFX.animateNumber(chipBalanceEl, previousBalance, balance, 550);
+    MaangPattaFX.animateWinCelebration(toSide);
+
+    phaseDeal.classList.add('hidden');
+    phaseOver.classList.remove('hidden');
+    isAnimating = false;
+  } else {
+    const nextTurnName = (turnIndex % 2 === 0) ? 'Player' : 'Dealer';
+    statusText.innerHTML = `Dealt <b>${drawnCard.label}</b> from ${sourceLabel} → Next: <b>${nextTurnName}</b> (Target: <b style="color:#fde047">${pointCard.rank}</b>)`;
+    isAnimating = false;
+  }
+}
+
+// ============================================================================
+// 5. EVENT LISTENERS
+// ============================================================================
+cutSlider.addEventListener('input', () => {
+  CasinoAudio.playCardFlick(1.2);
+  updateCutPreview();
+});
+
+document.getElementById('btn-sfx').addEventListener('click', (e) => {
+  const isMuted = CasinoAudio.toggleMute();
+  e.currentTarget.textContent = isMuted ? '🔇' : '🔊';
+});
+
+document.querySelectorAll('.chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    CasinoAudio.playChipClick();
+    document.querySelectorAll('.chip').forEach(b => b.classList.remove('active-chip'));
+    btn.classList.add('active-chip');
+    currentBet = parseInt(btn.getAttribute('data-bet'), 10);
+    currentBetEl.textContent = currentBet;
+  });
+});
+
+document.getElementById('btn-random-cut').addEventListener('click', () => {
+  if (isAnimating) return;
+  const randomCut = Math.floor(Math.random() * (42 - 10 + 1)) + 10;
+  cutSlider.value = randomCut;
+  updateCutPreview();
+  performSplit(randomCut);
+});
+
+document.getElementById('btn-confirm-cut').addEventListener('click', () => {
+  if (isAnimating) return;
+  performSplit(parseInt(cutSlider.value, 10));
+});
+
+document.getElementById('btn-deal-one').addEventListener('click', () => {
+  stopAutoDeal();
+  dealNextCard();
+});
+
+document.getElementById('btn-auto-deal').addEventListener('click', () => {
+  if (autoTimer) return;
+  async function autoStep() {
+    if (!pointCard || phaseDeal.classList.contains('hidden')) {
+      stopAutoDeal();
+      return;
+    }
+    await dealNextCard();
+    if (pointCard && !phaseDeal.classList.contains('hidden')) {
+      autoTimer = setTimeout(autoStep, 110);
+    }
+  }
+  autoStep();
+});
+
+document.getElementById('btn-new-round').addEventListener('click', initRound);
+
+// Initialize Table on Load
+initRound();</script>

@@ -1,0 +1,6 @@
+{
+  "name": "Royal Katti 3D: Maang Patta Casino",
+  "description": "An authentic high-roller 3D casino card game with smooth split-deck physics, royal felt table, and cinematic dealing animations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
