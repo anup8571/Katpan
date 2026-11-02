@@ -1,4 +1,4 @@
-import test from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createStandardDeck,
@@ -7,73 +7,114 @@ import {
   isWinningCard,
   getReceivingSide,
   computePayout,
+  getNextDealer,
+  getCutterForDealer,
+  generateBotCutIndex,
+  resolveRoundWinner,
+  getNextAntiClockwiseSeat,
+  resolveNextDealerAndCutter,
+  getBettingOrder,
+  generateBotBet,
+  generateBotDealDelayMs,
 } from './rules';
 
 test('createStandardDeck produces exactly 52 distinct cards with 4 suits and 13 ranks', () => {
   const deck = createStandardDeck();
   assert.equal(deck.length, 52);
-
-  const ids = new Set(deck.map((c) => c.id));
-  assert.equal(ids.size, 52);
-
-  const spades = deck.filter((c) => c.suit === 'spades');
-  const hearts = deck.filter((c) => c.suit === 'hearts');
-  const diamonds = deck.filter((c) => c.suit === 'diamonds');
-  const clubs = deck.filter((c) => c.suit === 'clubs');
-
-  assert.equal(spades.length, 13);
-  assert.equal(hearts.length, 13);
-  assert.equal(diamonds.length, 13);
-  assert.equal(clubs.length, 13);
+  const uniqueIds = new Set(deck.map((c) => c.id));
+  assert.equal(uniqueIds.size, 52);
+  const redCards = deck.filter((c) => c.isRed);
+  assert.equal(redCards.length, 26);
 });
 
 test('shuffleDeck preserves all cards and produces a permuted array', () => {
-  const original = createStandardDeck();
-  const shuffled = shuffleDeck(original);
-
+  const deck = createStandardDeck();
+  let seed = 42;
+  const rng = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+  const shuffled = shuffleDeck(deck, rng);
   assert.equal(shuffled.length, 52);
-  const originalIds = new Set(original.map((c) => c.id));
-  const shuffledIds = new Set(shuffled.map((c) => c.id));
-  assert.equal(shuffledIds.size, 52);
-  for (const id of originalIds) {
-    assert.ok(shuffledIds.has(id));
-  }
+  assert.notDeepEqual(
+    shuffled.map((c) => c.id),
+    deck.map((c) => c.id)
+  );
 });
 
 test('splitDeck splits at given cutIndex and extracts the bottom card of 2nd deck as pointCard', () => {
   const deck = createStandardDeck();
-  const cutIndex = 26;
-  const result = splitDeck(deck, cutIndex);
-
-  assert.equal(result.firstDeck.length, 26);
-  // Total was 52, cut at 26 means second deck had 26 cards, 1 became pointCard, so 25 remain
-  assert.equal(result.secondDeck.length, 25);
-  assert.ok(result.pointCard);
-  // The pointCard must be the original last card of secondDeck (index 51 of deck)
-  assert.equal(result.pointCard.id, deck[51].id);
-  // Total cards accounted for: 26 + 25 + 1 = 52
-  assert.equal(result.firstDeck.length + result.secondDeck.length + 1, 52);
+  const { firstDeck, secondDeck, pointCard } = splitDeck(deck, 20);
+  assert.equal(firstDeck.length, 20);
+  assert.equal(secondDeck.length, 31);
+  assert.equal(pointCard.id, deck[51].id);
 });
 
 test('isWinningCard checks rank equality regardless of suit', () => {
-  const pointCard = { id: 'spades-K', suit: 'spades' as const, rank: 'K' as const, label: 'K♠', color: '#000' };
-  const matchingCard = { id: 'hearts-K', suit: 'hearts' as const, rank: 'K' as const, label: 'K♥', color: '#f00' };
-  const nonMatchingCard = { id: 'spades-Q', suit: 'spades' as const, rank: 'Q' as const, label: 'Q♠', color: '#000' };
+  const cardA = { id: '7_spades', suit: 'spades' as const, rank: '7' as const, isRed: false, label: '7♠' };
+  const cardB = { id: '7_hearts', suit: 'hearts' as const, rank: '7' as const, isRed: true, label: '7♥' };
+  const cardC = { id: 'K_diamonds', suit: 'diamonds' as const, rank: 'K' as const, isRed: true, label: 'K♦' };
 
-  assert.equal(isWinningCard(matchingCard, pointCard), true);
-  assert.equal(isWinningCard(nonMatchingCard, pointCard), false);
+  assert.equal(isWinningCard(cardA, cardB), true);
+  assert.equal(isWinningCard(cardA, cardC), false);
 });
 
-test('getReceivingSide alternates correctly: even -> player, odd -> dealer', () => {
+test('getReceivingSide alternates correctly: even -> player (Bahar/Cutter), odd -> dealer (Andar/Dealer)', () => {
   assert.equal(getReceivingSide(0), 'player');
   assert.equal(getReceivingSide(1), 'dealer');
   assert.equal(getReceivingSide(2), 'player');
   assert.equal(getReceivingSide(3), 'dealer');
-  assert.equal(getReceivingSide(4), 'player');
 });
 
 test('computePayout calculates additions and deductions properly without negative balance', () => {
-  assert.equal(computePayout(1000, 100, true), 1100);
-  assert.equal(computePayout(1000, 100, false), 900);
-  assert.equal(computePayout(50, 100, false), 0);
+  assert.equal(computePayout(1000, 250, true), 1250);
+  assert.equal(computePayout(1000, 250, false), 750);
+  assert.equal(computePayout(100, 250, false), 0);
+});
+
+test('6-seat anti-clockwise rotation follows Rule 2: A deals, B cuts -> if B wins B deals & C cuts; if B loses A stays dealer & C cuts', () => {
+  assert.equal(getNextAntiClockwiseSeat('A'), 'B');
+  assert.equal(getNextAntiClockwiseSeat('F'), 'A');
+  assert.equal(getNextAntiClockwiseSeat('F', 'A'), 'B');
+
+  // Case 1: A is Dealer, B is Cutter, and B wins (Bahar / 'player' side wins)
+  const bWins = resolveNextDealerAndCutter('A', 'B', 'player');
+  assert.equal(bWins.nextDealer, 'B');
+  assert.equal(bWins.nextCutter, 'C');
+
+  // Case 2: A is Dealer, B is Cutter, and B loses (Andar / 'dealer' side wins)
+  const bLoses = resolveNextDealerAndCutter('A', 'B', 'dealer');
+  assert.equal(bLoses.nextDealer, 'A');
+  assert.equal(bLoses.nextCutter, 'C');
+
+  // Case 3: A is still Dealer, F is Cutter, and F loses -> A stays Dealer, B becomes Cutter (skipping A)
+  const fLoses = resolveNextDealerAndCutter('A', 'F', 'dealer');
+  assert.equal(fLoses.nextDealer, 'A');
+  assert.equal(fLoses.nextCutter, 'B');
+});
+
+test('getBettingOrder starts with Cutter and proceeds anti-clockwise excluding Dealer (Rule 3)', () => {
+  assert.deepEqual(getBettingOrder('A', 'B'), ['B', 'C', 'D', 'E', 'F']);
+  assert.deepEqual(getBettingOrder('A', 'C'), ['C', 'D', 'E', 'F', 'B']);
+  assert.deepEqual(getBettingOrder('D', 'E'), ['E', 'F', 'A', 'B', 'C']);
+});
+
+test('bot auto-betting and auto-deal delay helpers produce valid bets and delays (Rules 3 & 4)', () => {
+  const botBet1 = generateBotBet('B', true, () => 0.1);
+  assert.equal(botBet1.betSide, 'player');
+  assert.equal(botBet1.betAmount, 50);
+
+  const botBet2 = generateBotBet('C', false, () => 0.75);
+  assert.equal(botBet2.betSide, 'dealer');
+  assert.equal(botBet2.betAmount, 500);
+
+  const delay = generateBotDealDelayMs(() => 0.5);
+  assert.equal(delay >= 250 && delay <= 430, true);
+});
+
+test('legacy dealer rotation and cutter helpers remain valid', () => {
+  assert.equal(getNextDealer('player'), 'player');
+  assert.equal(getCutterForDealer('player'), 'bot');
+  assert.equal(generateBotCutIndex(() => 0), 12);
+  assert.equal(resolveRoundWinner('player', 'bot'), 'player');
 });

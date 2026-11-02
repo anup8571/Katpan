@@ -106,8 +106,25 @@ function drawSuitPath(
   ctx.scale(scale, scale);
   ctx.translate(-25, -28);
   const path = new Path2D(SUIT_PATHS[suit]);
-  ctx.fillStyle = color;
+
+  const isRed = suit === 'hearts' || suit === 'diamonds';
+  const grad = ctx.createLinearGradient(8, 6, 42, 52);
+  if (isRed) {
+    grad.addColorStop(0, '#ef4444');
+    grad.addColorStop(0.45, '#dc2626');
+    grad.addColorStop(1, '#991b1b');
+  } else {
+    grad.addColorStop(0, '#334155');
+    grad.addColorStop(0.45, '#0f172a');
+    grad.addColorStop(1, '#020617');
+  }
+
+  ctx.fillStyle = grad;
   ctx.fill(path);
+
+  ctx.strokeStyle = isRed ? '#7f1d1d' : '#020617';
+  ctx.lineWidth = 1.6;
+  ctx.stroke(path);
   ctx.restore();
 }
 
@@ -128,61 +145,254 @@ function drawRoundedRect(
   ctx.closePath();
 }
 
-export function getCardFrontTexture(
-  card: Card,
-  renderer?: THREE.WebGLRenderer
-): THREE.CanvasTexture {
-  const cacheKey = `card_front_v2_${card.id}`;
+export function getCardLinenBumpTexture(renderer?: THREE.WebGLRenderer): THREE.CanvasTexture {
+  const cacheKey = 'card_linen_bump_v3';
   if (cardTextureCache.has(cacheKey)) {
     return cardTextureCache.get(cacheKey)!;
   }
 
-  const width = 512;
-  const height = 716;
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(0, 0, size, size);
+
+  // Fine cambric air-cushion linen weave pattern
+  for (let y = 0; y < size; y += 4) {
+    ctx.fillStyle = y % 8 === 0 ? '#929292' : '#6e6e6e';
+    ctx.fillRect(0, y, size, 1.5);
+  }
+  for (let x = 0; x < size; x += 4) {
+    ctx.fillStyle = x % 8 === 0 ? 'rgba(155,155,155,0.45)' : 'rgba(95,95,95,0.45)';
+    ctx.fillRect(x, 0, 1.5, size);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(6, 8);
+  if (renderer) {
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  }
+  cardTextureCache.set(cacheKey, tex);
+  return tex;
+}
+
+export function getTuftedLeatherTextures(
+  baseHex = '#5c0f1d',
+  highlightHex = '#881337',
+  renderer?: THREE.WebGLRenderer
+): {
+  map: THREE.CanvasTexture;
+  bumpMap: THREE.CanvasTexture;
+} {
+  const mapKey = `tufted_leather_map_${baseHex}_${highlightHex}`;
+  const bumpKey = `tufted_leather_bump_${baseHex}`;
+  if (cardTextureCache.has(mapKey) && cardTextureCache.has(bumpKey)) {
+    return {
+      map: cardTextureCache.get(mapKey)!,
+      bumpMap: cardTextureCache.get(bumpKey)!,
+    };
+  }
+
+  const size = 512;
+  const albedoCanvas = document.createElement('canvas');
+  albedoCanvas.width = size;
+  albedoCanvas.height = size;
+  const actx = albedoCanvas.getContext('2d')!;
+
+  const bumpCanvas = document.createElement('canvas');
+  bumpCanvas.width = size;
+  bumpCanvas.height = size;
+  const bctx = bumpCanvas.getContext('2d')!;
+
+  actx.fillStyle = baseHex;
+  actx.fillRect(0, 0, size, size);
+
+  bctx.fillStyle = '#909090';
+  bctx.fillRect(0, 0, size, size);
+
+  // Fine organic pebble leather grain
+  for (let i = 0; i < 9000; i++) {
+    const gx = (i * 17389) % size;
+    const gy = (i * 29473) % size;
+    actx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.045)';
+    actx.fillRect(gx, gy, 2, 2);
+    bctx.fillStyle = i % 2 === 0 ? '#9c9c9c' : '#828282';
+    bctx.fillRect(gx, gy, 2, 2);
+  }
+
+  // Chesterfield diamond quilting grid
+  const step = 128;
+  for (let cy = 0; cy <= size; cy += step / 2) {
+    const offset = (cy / (step / 2)) % 2 === 0 ? 0 : step / 2;
+    for (let cx = offset; cx <= size; cx += step) {
+      const pillowGrad = actx.createRadialGradient(cx, cy, 4, cx, cy, step * 0.52);
+      pillowGrad.addColorStop(0, highlightHex);
+      pillowGrad.addColorStop(0.65, baseHex);
+      pillowGrad.addColorStop(1, 'rgba(0,0,0,0.38)');
+      actx.fillStyle = pillowGrad;
+      actx.beginPath();
+      actx.moveTo(cx, cy - step / 2);
+      actx.lineTo(cx + step / 2, cy);
+      actx.lineTo(cx, cy + step / 2);
+      actx.lineTo(cx - step / 2, cy);
+      actx.closePath();
+      actx.fill();
+
+      const bGrad = bctx.createRadialGradient(cx, cy, 4, cx, cy, step * 0.52);
+      bGrad.addColorStop(0, '#dcdcdc');
+      bGrad.addColorStop(0.7, '#969696');
+      bGrad.addColorStop(1, '#383838');
+      bctx.fillStyle = bGrad;
+      bctx.beginPath();
+      bctx.moveTo(cx, cy - step / 2);
+      bctx.lineTo(cx + step / 2, cy);
+      bctx.lineTo(cx, cy + step / 2);
+      bctx.lineTo(cx - step / 2, cy);
+      bctx.closePath();
+      bctx.fill();
+    }
+  }
+
+  actx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+  actx.lineWidth = 4;
+  bctx.strokeStyle = '#262626';
+  bctx.lineWidth = 6;
+
+  for (let i = -size; i <= size * 2; i += step) {
+    actx.beginPath();
+    actx.moveTo(i, 0);
+    actx.lineTo(i + size, size);
+    actx.stroke();
+    actx.beginPath();
+    actx.moveTo(i, size);
+    actx.lineTo(i + size, 0);
+    actx.stroke();
+
+    bctx.beginPath();
+    bctx.moveTo(i, 0);
+    bctx.lineTo(i + size, size);
+    bctx.stroke();
+    bctx.beginPath();
+    bctx.moveTo(i, size);
+    bctx.lineTo(i + size, 0);
+    bctx.stroke();
+  }
+
+  for (let cy = 0; cy <= size; cy += step / 2) {
+    const offset = (cy / (step / 2)) % 2 === 0 ? 0 : step / 2;
+    for (let cx = offset; cx <= size; cx += step) {
+      actx.fillStyle = 'rgba(0,0,0,0.65)';
+      actx.beginPath();
+      actx.arc(cx, cy, 10, 0, Math.PI * 2);
+      actx.fill();
+
+      actx.fillStyle = '#d99b26';
+      actx.beginPath();
+      actx.arc(cx, cy, 6, 0, Math.PI * 2);
+      actx.fill();
+
+      bctx.fillStyle = '#181818';
+      bctx.beginPath();
+      bctx.arc(cx, cy, 11, 0, Math.PI * 2);
+      bctx.fill();
+      bctx.fillStyle = '#ffffff';
+      bctx.beginPath();
+      bctx.arc(cx, cy, 5, 0, Math.PI * 2);
+      bctx.fill();
+    }
+  }
+
+  const map = new THREE.CanvasTexture(albedoCanvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = THREE.RepeatWrapping;
+  map.wrapT = THREE.RepeatWrapping;
+
+  const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+  bumpMap.wrapS = THREE.RepeatWrapping;
+  bumpMap.wrapT = THREE.RepeatWrapping;
+
+  if (renderer) {
+    map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  }
+
+  cardTextureCache.set(mapKey, map);
+  cardTextureCache.set(bumpKey, bumpMap);
+  return { map, bumpMap };
+}
+
+export function getCardFrontTexture(
+  card: Card,
+  renderer?: THREE.WebGLRenderer
+): THREE.CanvasTexture {
+  const cacheKey = `card_front_v7_nomip_${card.id}`;
+  if (cardTextureCache.has(cacheKey)) {
+    return cardTextureCache.get(cacheKey)!;
+  }
+
+  // Exact 1:1.40 card aspect ratio (640x896 -> uniform scale = 3.2) with mipmaps disabled
+  // so mobile GPUs ALWAYS sample Level 0 HD and never drop to a blurry mipmap when unzoomed!
+  const width = 640;
+  const height = 896;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d')!;
 
-  const scaleX = width / 200;
-  const scaleY = height / 280;
+  const scale = width / 200; // Exact 3.2 on both X and Y!
 
+  // Crisp porcelain-ivory card stock background
   const bgGrad = ctx.createRadialGradient(
     width * 0.5,
-    height * 0.45,
-    20,
+    height * 0.48,
+    30,
     width * 0.5,
     height * 0.5,
-    width * 0.75
+    height * 0.65
   );
   bgGrad.addColorStop(0, '#ffffff');
-  bgGrad.addColorStop(0.75, '#fbfaf6');
-  bgGrad.addColorStop(1, '#f1efe6');
+  bgGrad.addColorStop(0.8, '#fdfcf7');
+  bgGrad.addColorStop(1, '#f1ede0');
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, width, height);
 
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.012)';
-  for (let y = 0; y < height; y += 6) {
-    ctx.fillRect(0, y, width, 1);
-  }
+  // High-contrast dark slate outer border so fanned cards have crisp separation
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 10;
+  drawRoundedRect(ctx, 5, 5, width - 10, height - 10, 28);
+  ctx.stroke();
 
-  ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 8;
-  drawRoundedRect(ctx, 4, 4, width - 8, height - 8, 28);
+  // Inner metallic gold casino frame
+  ctx.strokeStyle = 'rgba(217, 119, 6, 0.72)';
+  ctx.lineWidth = 3.5;
+  drawRoundedRect(ctx, 16, 16, width - 32, height - 32, 20);
   ctx.stroke();
 
   const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
-  const mainColor = isRed ? '#b91c1c' : '#0f172a';
+  const mainColor = isRed ? '#dc2626' : '#0f172a';
   const accentGold = '#b45309';
 
+  // Casino Jumbo Corner Index (uniformly scaled so fonts and suit pips are never distorted)
   const drawCorner = () => {
     ctx.save();
+    ctx.scale(scale, scale);
+    const cornerX = 26.5;
+    const isTen = card.rank === '10';
     ctx.fillStyle = mainColor;
-    ctx.font = `900 ${Math.round(26 * scaleX)}px Georgia, "Times New Roman", serif`;
+    ctx.font = `900 ${isTen ? 30 : 35}px Georgia, "Times New Roman", serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(card.rank, 27 * scaleX, 39 * scaleY);
-    drawSuitPath(ctx, card.suit, 27 * scaleX, 55 * scaleY, 0.42 * scaleX, false, mainColor);
+    ctx.fillText(card.rank, cornerX, 41);
+
+    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = mainColor;
+    ctx.strokeText(card.rank, cornerX, 41);
+
+    drawSuitPath(ctx, card.suit, cornerX, 62, 0.54, false, mainColor);
     ctx.restore();
   };
 
@@ -195,34 +405,50 @@ export function getCardFrontTexture(
 
   const isFace = ['J', 'Q', 'K'].includes(card.rank);
   if (isFace) {
-    drawLuxuryCourtCard(ctx, card.rank, card.suit, mainColor, accentGold, scaleX, scaleY);
+    ctx.save();
+    ctx.scale(scale, scale);
+    drawLuxuryCourtCard(ctx, card.rank, card.suit, mainColor, accentGold, 1, 1);
+    ctx.restore();
   } else {
+    ctx.save();
+    ctx.scale(scale, scale);
+    // Inner pip frame for number/Ace cards
+    ctx.strokeStyle = 'rgba(180, 83, 9, 0.32)';
+    ctx.lineWidth = 1.2;
+    drawRoundedRect(ctx, 46, 36, 108, 208, 12);
+    ctx.stroke();
+
     const pips = PIP_LAYOUTS[card.rank] || [];
     for (const [cx, cy, flip, customScale] of pips) {
-      const sc = (customScale || 0.74) * scaleX;
-      drawSuitPath(ctx, card.suit, cx * scaleX, cy * scaleY, sc, flip, mainColor);
+      const sc = customScale ? customScale * 1.05 : 0.84;
+      drawSuitPath(ctx, card.suit, cx, cy, sc, flip, mainColor);
     }
 
     if (card.rank === 'A') {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(180, 83, 9, 0.45)';
-      ctx.lineWidth = 3;
+      const acx = 100;
+      const acy = 140;
+      ctx.strokeStyle = 'rgba(180, 83, 9, 0.78)';
+      ctx.lineWidth = 2.0;
       ctx.beginPath();
-      ctx.arc(100 * scaleX, 140 * scaleY, 46 * scaleX, 0, Math.PI * 2);
+      ctx.arc(acx, acy, 46, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.setLineDash([6, 5]);
+
+      ctx.setLineDash([4, 3]);
       ctx.beginPath();
-      ctx.arc(100 * scaleX, 140 * scaleY, 52 * scaleX, 0, Math.PI * 2);
+      ctx.arc(acx, acy, 53, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.restore();
+      ctx.setLineDash([]);
     }
+    ctx.restore();
   }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  if (renderer) {
-    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  }
+  // Disable mipmap downsampling on playing cards so mobile GPUs ALWAYS sample Level 0 HD even when unzoomed!
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 16;
   cardTextureCache.set(cacheKey, texture);
   return texture;
 }
@@ -237,76 +463,186 @@ function drawLuxuryCourtCard(
   scaleY: number
 ) {
   ctx.save();
-  const x = 44 * scaleX;
-  const y = 42 * scaleY;
-  const w = 112 * scaleX;
-  const h = 196 * scaleY;
+  const x = 48 * scaleX;
+  const y = 36 * scaleY;
+  const w = 104 * scaleX;
+  const h = 208 * scaleY;
 
+  // High-contrast warm ivory & gold court frame background
   const tapGrad = ctx.createLinearGradient(x, y, x + w, y + h);
-  tapGrad.addColorStop(0, '#fefce8');
-  tapGrad.addColorStop(0.5, '#fffbeb');
-  tapGrad.addColorStop(1, '#fef3c7');
+  tapGrad.addColorStop(0, '#fffbeb');
+  tapGrad.addColorStop(0.5, '#fef3c7');
+  tapGrad.addColorStop(1, '#fde68a');
   ctx.fillStyle = tapGrad;
-  drawRoundedRect(ctx, x, y, w, h, 14);
+  drawRoundedRect(ctx, x, y, w, h, 10);
   ctx.fill();
 
-  ctx.strokeStyle = goldColor;
-  ctx.lineWidth = 4;
+  // Bold double court border
+  ctx.strokeStyle = '#78350f';
+  ctx.lineWidth = 2.4;
   ctx.stroke();
 
   ctx.strokeStyle = mainColor;
-  ctx.lineWidth = 1.5;
-  drawRoundedRect(ctx, x + 7, y + 7, w - 14, h - 14, 10);
+  ctx.lineWidth = 1.4;
+  drawRoundedRect(ctx, x + 4, y + 4, w - 8, h - 8, 7);
   ctx.stroke();
 
   const cx = 100 * scaleX;
   const cy = 140 * scaleY;
 
-  ctx.fillStyle =
-    suit === 'hearts' || suit === 'diamonds'
-      ? 'rgba(185, 28, 28, 0.08)'
-      : 'rgba(15, 23, 42, 0.08)';
-  ctx.beginPath();
-  ctx.arc(cx, cy, 42 * scaleX, 0, Math.PI * 2);
-  ctx.fill();
+  // Draw mirrored top & bottom high-contrast royal court bust portraits
+  const drawHalfPortrait = (flipped: boolean) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (flipped) ctx.rotate(Math.PI);
 
-  ctx.strokeStyle = goldColor;
-  ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.rect(-w / 2 + 4, -h / 2 + 4, w - 8, h / 2 - 4);
+    ctx.clip();
+
+    // Rich contrasting halo behind royal head
+    ctx.fillStyle =
+      suit === 'hearts' || suit === 'diamonds'
+        ? 'rgba(185, 28, 28, 0.16)'
+        : 'rgba(15, 23, 42, 0.16)';
+    ctx.beginPath();
+    ctx.arc(0, -40 * scaleY, 36 * scaleX, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Bold Royal Shoulders & Brocade Robe with dark outline
+    const robeGrad = ctx.createLinearGradient(-42 * scaleX, -15 * scaleY, 42 * scaleX, 2 * scaleY);
+    if (suit === 'hearts' || suit === 'diamonds') {
+      robeGrad.addColorStop(0, '#7f1d1d');
+      robeGrad.addColorStop(0.5, '#dc2626');
+      robeGrad.addColorStop(1, '#7f1d1d');
+    } else {
+      robeGrad.addColorStop(0, '#0f172a');
+      robeGrad.addColorStop(0.5, '#1e3a8a');
+      robeGrad.addColorStop(1, '#0f172a');
+    }
+    ctx.fillStyle = robeGrad;
+    ctx.beginPath();
+    ctx.moveTo(-42 * scaleX, 2 * scaleY);
+    ctx.quadraticCurveTo(-38 * scaleX, -30 * scaleY, -15 * scaleX, -34 * scaleY);
+    ctx.lineTo(15 * scaleX, -34 * scaleY);
+    ctx.quadraticCurveTo(38 * scaleX, -30 * scaleY, 42 * scaleX, 2 * scaleY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 2.0;
+    ctx.stroke();
+
+    // Gold embroidered sash & ermine collar
+    ctx.fillStyle = '#f59e0b';
+    ctx.strokeStyle = '#451a03';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-24 * scaleX, -32 * scaleY);
+    ctx.lineTo(0, -6 * scaleY);
+    ctx.lineTo(24 * scaleX, -32 * scaleY);
+    ctx.lineTo(14 * scaleX, -34 * scaleY);
+    ctx.lineTo(0, -17 * scaleY);
+    ctx.lineTo(-14 * scaleX, -34 * scaleY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Dark Hair / Curls flanking face for strong silhouette contrast
+    ctx.fillStyle = '#1c1917';
+    ctx.beginPath();
+    ctx.ellipse(-16 * scaleX, -52 * scaleY, 6.5 * scaleX, 15 * scaleY, 0.15, 0, Math.PI * 2);
+    ctx.ellipse(16 * scaleX, -52 * scaleY, 6.5 * scaleX, 15 * scaleY, -0.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Neck & Sculpted Face with bold contour stroke
+    ctx.fillStyle = '#f5d0a9';
+    ctx.fillRect(-7 * scaleX, -42 * scaleY, 14 * scaleX, 12 * scaleY);
+
+    ctx.beginPath();
+    ctx.ellipse(0, -53 * scaleY, 15.5 * scaleX, 19.5 * scaleY, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#451a03';
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    // Bold Eyes & Brows
+    ctx.fillStyle = '#020617';
+    ctx.beginPath();
+    ctx.arc(-6 * scaleX, -55 * scaleY, 2.3 * scaleX, 0, Math.PI * 2);
+    ctx.arc(6 * scaleX, -55 * scaleY, 2.3 * scaleX, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (rank === 'K') {
+      ctx.fillStyle = '#1c1917';
+      ctx.beginPath();
+      ctx.arc(0, -43 * scaleY, 13 * scaleX, 0.08 * Math.PI, 0.92 * Math.PI);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#b91c1c';
+      ctx.beginPath();
+      ctx.arc(0, -43 * scaleY, 4 * scaleX, 0, Math.PI);
+      ctx.fill();
+    }
+
+    // Jeweled Imperial Crown with crisp dark outline
+    ctx.fillStyle = '#f59e0b';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(-18 * scaleX, -67 * scaleY);
+    ctx.lineTo(-22 * scaleX, -85 * scaleY);
+    ctx.lineTo(-9 * scaleX, -74 * scaleY);
+    ctx.lineTo(0, -89 * scaleY);
+    ctx.lineTo(9 * scaleX, -74 * scaleY);
+    ctx.lineTo(22 * scaleX, -85 * scaleY);
+    ctx.lineTo(18 * scaleX, -67 * scaleY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = mainColor;
+    ctx.beginPath();
+    ctx.arc(0, -73 * scaleY, 3 * scaleX, 0, Math.PI * 2);
+    ctx.arc(-10 * scaleX, -72 * scaleY, 2.5 * scaleX, 0, Math.PI * 2);
+    ctx.arc(10 * scaleX, -72 * scaleY, 2.5 * scaleX, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  };
+
+  drawHalfPortrait(false);
+  drawHalfPortrait(true);
+
+  // Horizontal divider & central rank medallion
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = 2.2;
   ctx.beginPath();
-  ctx.arc(cx, cy, 42 * scaleX, 0, Math.PI * 2);
+  ctx.moveTo(x + 4, cy);
+  ctx.lineTo(x + w - 4, cy);
   ctx.stroke();
 
-  ctx.save();
-  ctx.translate(cx, cy - 18 * scaleY);
-  ctx.fillStyle = '#d97706';
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 20 * scaleX, 0, Math.PI * 2);
+  ctx.fill();
   ctx.strokeStyle = mainColor;
   ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(-26 * scaleX, 14 * scaleY);
-  ctx.lineTo(-30 * scaleX, -12 * scaleY);
-  ctx.lineTo(-14 * scaleX, 2 * scaleY);
-  ctx.lineTo(0, -18 * scaleY);
-  ctx.lineTo(14 * scaleX, 2 * scaleY);
-  ctx.lineTo(30 * scaleX, -12 * scaleY);
-  ctx.lineTo(26 * scaleX, 14 * scaleY);
-  ctx.closePath();
-  ctx.fill();
   ctx.stroke();
-  ctx.restore();
 
   ctx.fillStyle = mainColor;
-  ctx.font = `900 ${Math.round(38 * scaleX)}px Georgia, serif`;
+  ctx.font = `900 ${Math.round(25 * scaleX)}px Georgia, serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(rank, cx, cy + 22 * scaleY);
+  ctx.fillText(rank, cx, cy + 1 * scaleY);
 
-  drawSuitPath(ctx, suit, x + 20 * scaleX, y + 22 * scaleY, 0.45 * scaleX, false, mainColor);
+  // Corner suit emblems inside court box
+  drawSuitPath(ctx, suit, x + 17 * scaleX, y + 20 * scaleY, 0.46 * scaleX, false, mainColor);
   drawSuitPath(
     ctx,
     suit,
-    x + w - 20 * scaleX,
-    y + h - 22 * scaleY,
-    0.45 * scaleX,
+    x + w - 17 * scaleX,
+    y + h - 20 * scaleY,
+    0.46 * scaleX,
     true,
     mainColor
   );
@@ -318,13 +654,14 @@ export function getCardBackTexture(
   type: 'red' | 'blue' = 'red',
   renderer?: THREE.WebGLRenderer
 ): THREE.CanvasTexture {
-  const cacheKey = `card_back_v2_${type}`;
+  const cacheKey = `card_back_v5_pot_${type}`;
   if (cardTextureCache.has(cacheKey)) {
     return cardTextureCache.get(cacheKey)!;
   }
 
-  const width = 512;
-  const height = 716;
+  // Exact Power-Of-Two (1024x2048) resolution
+  const width = 1024;
+  const height = 2048;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -333,34 +670,40 @@ export function getCardBackTexture(
   ctx.fillStyle = '#fbfaf6';
   ctx.fillRect(0, 0, width, height);
 
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 16;
+  drawRoundedRect(ctx, 8, 8, width - 16, height - 16, 54);
+  ctx.stroke();
+
   const primary = type === 'red' ? '#7f1d1d' : '#1e3a8a';
-  const deep = type === 'red' ? '#450a0a' : '#0f172a';
+  const deep = type === 'red' ? '#3b0707' : '#0b1528';
 
   const grad = ctx.createRadialGradient(
     width / 2,
     height / 2,
-    30,
+    60,
     width / 2,
     height / 2,
-    height * 0.55
+    height * 0.56
   );
   grad.addColorStop(0, primary);
   grad.addColorStop(1, deep);
   ctx.fillStyle = grad;
-  drawRoundedRect(ctx, 22, 22, width - 44, height - 44, 18);
+  drawRoundedRect(ctx, 44, 52, width - 88, height - 104, 42);
   ctx.fill();
 
   ctx.strokeStyle = '#f59e0b';
-  ctx.lineWidth = 5;
+  ctx.lineWidth = 12;
   ctx.stroke();
 
   ctx.save();
-  drawRoundedRect(ctx, 32, 32, width - 64, height - 64, 12);
+  drawRoundedRect(ctx, 64, 76, width - 128, height - 152, 30);
   ctx.clip();
 
-  ctx.strokeStyle = 'rgba(251, 191, 36, 0.22)';
-  ctx.lineWidth = 2;
-  const step = 24;
+  // Intricate guilloché diamond lattice
+  ctx.strokeStyle = 'rgba(251, 191, 36, 0.3)';
+  ctx.lineWidth = 4;
+  const step = 44;
   for (let x = -height; x < width + height; x += step) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
@@ -374,41 +717,68 @@ export function getCardBackTexture(
   }
   ctx.restore();
 
+  // Inner ornamental filigree border
   ctx.strokeStyle = '#fde047';
-  ctx.lineWidth = 3;
-  ctx.setLineDash([10, 6]);
-  drawRoundedRect(ctx, 36, 36, width - 72, height - 72, 12);
+  ctx.lineWidth = 6;
+  ctx.setLineDash([18, 12]);
+  drawRoundedRect(ctx, 74, 88, width - 148, height - 176, 26);
   ctx.stroke();
   ctx.setLineDash([]);
+
+  // Corner gold rosettes
+  const corners = [
+    [130, 150],
+    [width - 130, 150],
+    [130, height - 150],
+    [width - 130, height - 150],
+  ];
+  for (const [rx, ry] of corners) {
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.arc(rx, ry, 26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = deep;
+    ctx.lineWidth = 5;
+    ctx.stroke();
+  }
 
   const cx = width / 2;
   const cy = height / 2;
 
+  // Outer scalloped gold rosette
+  for (let i = 0; i < 16; i++) {
+    const ang = (i * Math.PI) / 8;
+    ctx.fillStyle = i % 2 === 0 ? '#f59e0b' : '#fde68a';
+    ctx.beginPath();
+    ctx.arc(cx + Math.cos(ang) * 180, cy + Math.sin(ang) * 180, 26, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   ctx.fillStyle = deep;
   ctx.beginPath();
-  ctx.arc(cx, cy, 82, 0, Math.PI * 2);
+  ctx.arc(cx, cy, 180, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.strokeStyle = '#fbbf24';
-  ctx.lineWidth = 5;
+  ctx.lineWidth = 12;
   ctx.stroke();
 
   ctx.strokeStyle = '#fde68a';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 5;
   ctx.beginPath();
-  ctx.arc(cx, cy, 68, 0, Math.PI * 2);
+  ctx.arc(cx, cy, 146, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.fillStyle = '#fbbf24';
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 12; i++) {
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate((i * Math.PI) / 4);
+    ctx.rotate((i * Math.PI) / 6);
     ctx.beginPath();
-    ctx.moveTo(0, -54);
-    ctx.lineTo(12, -12);
+    ctx.moveTo(0, -126);
+    ctx.lineTo(22, -30);
     ctx.lineTo(0, 0);
-    ctx.lineTo(-12, -12);
+    ctx.lineTo(-22, -30);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
@@ -416,15 +786,16 @@ export function getCardBackTexture(
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  if (renderer) {
-    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  }
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 16;
   cardTextureCache.set(cacheKey, texture);
   return texture;
 }
 
 export function getCardStackEdgeTexture(renderer?: THREE.WebGLRenderer): THREE.CanvasTexture {
-  const cacheKey = 'card_stack_edge_striations';
+  const cacheKey = 'card_stack_edge_striations_v3';
   if (cardTextureCache.has(cacheKey)) {
     return cardTextureCache.get(cacheKey)!;
   }
@@ -434,12 +805,12 @@ export function getCardStackEdgeTexture(renderer?: THREE.WebGLRenderer): THREE.C
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = '#f3f1e9';
+  ctx.fillStyle = '#f5f2e6';
   ctx.fillRect(0, 0, 256, 256);
 
-  for (let y = 0; y < 256; y += 3) {
-    ctx.fillStyle = y % 6 === 0 ? '#d6d3c4' : '#ebe8de';
-    ctx.fillRect(0, y, 256, 1.5);
+  for (let y = 0; y < 256; y += 2) {
+    ctx.fillStyle = y % 4 === 0 ? '#d8cfb8' : '#efeadd';
+    ctx.fillRect(0, y, 256, 1);
   }
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -527,8 +898,8 @@ export function getFeltTableTexture(renderer?: THREE.WebGLRenderer): {
   map: THREE.CanvasTexture;
   bumpMap: THREE.CanvasTexture;
 } {
-  const mapKey = 'felt_table_realistic_v2';
-  const bumpKey = 'felt_bump_realistic_v2';
+  const mapKey = 'felt_table_realistic_v6_6seats';
+  const bumpKey = 'felt_bump_realistic_v6_6seats';
   if (cardTextureCache.has(mapKey) && cardTextureCache.has(bumpKey)) {
     return {
       map: cardTextureCache.get(mapKey)!,
@@ -536,8 +907,10 @@ export function getFeltTableTexture(renderer?: THREE.WebGLRenderer): {
     };
   }
 
+  // Strict Power-Of-Two (2048x2048) to prevent mobile GPU NPOT mipmap blurring
   const width = 2048;
-  const height = 1536;
+  const height = 2048;
+  const vScale = height / 1536;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -545,82 +918,136 @@ export function getFeltTableTexture(renderer?: THREE.WebGLRenderer): {
 
   const grad = ctx.createRadialGradient(
     width * 0.5,
-    height * 0.48,
+    height * 0.46,
     80,
     width * 0.5,
     height * 0.5,
-    width * 0.62
+    width * 0.68
   );
-  grad.addColorStop(0, '#0f5c34');
-  grad.addColorStop(0.55, '#094225');
+  grad.addColorStop(0, '#116338');
+  grad.addColorStop(0.55, '#094426');
   grad.addColorStop(0.88, '#052b17');
   grad.addColorStop(1, '#02180c');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, width, height);
 
+  // Subtle wool baize fiber grain
   ctx.fillStyle = 'rgba(255, 255, 255, 0.018)';
-  for (let i = 0; i < 35000; i++) {
+  for (let i = 0; i < 38000; i++) {
     const rx = (i * 19937) % width;
     const ry = (i * 31337) % height;
     ctx.fillRect(rx, ry, 2, 2);
   }
   ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
-  for (let i = 0; i < 35000; i++) {
+  for (let i = 0; i < 38000; i++) {
     const rx = (i * 27449) % width;
     const ry = (i * 14741) % height;
     ctx.fillRect(rx, ry, 2, 2);
   }
 
-  const margin = 86;
-  ctx.strokeStyle = 'rgba(217, 167, 74, 0.65)';
-  ctx.lineWidth = 6;
-  drawRoundedRect(ctx, margin, margin, width - margin * 2, height - margin * 2, 42);
+  // Outer double gold border
+  const margin = 74;
+  ctx.strokeStyle = 'rgba(217, 167, 74, 0.78)';
+  ctx.lineWidth = 7;
+  drawRoundedRect(ctx, margin, margin, width - margin * 2, height - margin * 2, 48);
   ctx.stroke();
 
-  ctx.strokeStyle = 'rgba(217, 167, 74, 0.28)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(217, 167, 74, 0.34)';
+  ctx.lineWidth = 2.5;
   drawRoundedRect(
     ctx,
     margin + 14,
     margin + 14,
     width - (margin + 14) * 2,
     height - (margin + 14) * 2,
-    32
+    38
   );
   ctx.stroke();
 
-  const worldToU = (wx: number) => (wx / 8.8 + 0.5) * width;
-  const worldToV = (wz: number) => (wz / 6.6 + 0.5) * height;
+  // World (9.6m x 7.2m) to Canvas UV helpers
+  const worldToU = (wx: number) => (wx / 9.6 + 0.5) * width;
+  const worldToV = (wz: number) => (wz / 7.2 + 0.5) * height;
 
-  const shoeY = worldToV(-1.55);
-  const deck1X = worldToU(-2.15);
-  const deck2X = worldToU(-0.35);
-  const hukamX = worldToU(2.05);
-
-  ctx.strokeStyle = 'rgba(234, 179, 8, 0.45)';
-  ctx.lineWidth = 3;
-  drawRoundedRect(ctx, deck1X - 150, shoeY - 210, 300, 420, 18);
-  ctx.stroke();
-
-  drawRoundedRect(ctx, deck2X - 150, shoeY - 210, 300, 420, 18);
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(234, 179, 8, 0.55)';
-  ctx.lineWidth = 4;
+  // =========================================================================
+  // 1. NORTH SIDE: ANDAR (DEALER'S SIDE) + SHOES + HUKAM PEDESTAL
+  // =========================================================================
+  const northArcY = worldToV(-3.15);
+  ctx.fillStyle = 'rgba(136, 19, 55, 0.24)';
   ctx.beginPath();
-  ctx.arc(hukamX, shoeY, 240, 0, Math.PI * 2);
+  ctx.arc(width / 2, northArcY - 40 * vScale, 395, 0, Math.PI, false);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(245, 158, 11, 0.75)';
+  ctx.lineWidth = 4.5;
   ctx.stroke();
 
-  ctx.font = '700 26px Georgia, serif';
-  ctx.fillStyle = 'rgba(243, 210, 120, 0.78)';
+  ctx.font = '800 26px Georgia, serif';
+  ctx.fillStyle = '#fde68a';
   ctx.textAlign = 'center';
-  ctx.fillText('I • FIRST SHOE', deck1X, shoeY - 235);
-  ctx.fillText('II • SECOND SHOE', deck2X, shoeY - 235);
-  ctx.fillText('HUKAM • POINT CARD', hukamX, shoeY - 255);
+  ctx.fillText('♛  S E A T   A   •   N O R T H   B A N K E R   S T A T I O N  ♛', width / 2, worldToV(-2.72));
 
-  const midY = worldToV(-0.08);
-  ctx.strokeStyle = 'rgba(217, 167, 74, 0.42)';
-  ctx.lineWidth = 3;
+  const northRowZ = worldToV(-1.68);
+  const deck1X = worldToU(-2.95);
+  const deck2X = worldToU(-1.68);
+  const dealerMatX = worldToU(0.18);
+  const hukamX = worldToU(2.68);
+
+  // 1st & 2nd Shoe Bays
+  ctx.strokeStyle = 'rgba(234, 179, 8, 0.6)';
+  ctx.lineWidth = 3.5;
+  drawRoundedRect(ctx, deck1X - 118, northRowZ - 165 * vScale, 236, 330 * vScale, 16);
+  ctx.stroke();
+  drawRoundedRect(ctx, deck2X - 118, northRowZ - 165 * vScale, 236, 330 * vScale, 16);
+  ctx.stroke();
+
+  ctx.font = '800 22px Georgia, serif';
+  ctx.fillStyle = '#fde68a';
+  ctx.fillText('1ST SHOE', deck1X, northRowZ - 182 * vScale);
+  ctx.fillText('2ND SHOE', deck2X, northRowZ - 182 * vScale);
+
+  // ANDAR • DEALER'S SIDE Card Mat in North-Center
+  const dMatW = 500;
+  const dMatH = 340 * vScale;
+  ctx.fillStyle = 'rgba(159, 18, 57, 0.18)';
+  drawRoundedRect(ctx, dealerMatX - dMatW / 2, northRowZ - dMatH / 2, dMatW, dMatH, 24);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(244, 63, 94, 0.82)';
+  ctx.lineWidth = 4.5;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(251, 191, 36, 0.65)';
+  ctx.lineWidth = 2.5;
+  drawRoundedRect(
+    ctx,
+    dealerMatX - dMatW / 2 + 10,
+    northRowZ - dMatH / 2 + 10,
+    dMatW - 20,
+    dMatH - 20,
+    18
+  );
+  ctx.stroke();
+
+  ctx.font = '800 28px Georgia, serif';
+  ctx.fillStyle = '#fecdd3';
+  ctx.fillText("ANDAR • DEALER'S SIDE", dealerMatX, northRowZ - dMatH / 2 + 48);
+  ctx.font = '700 19px Georgia, serif';
+  ctx.fillStyle = 'rgba(253, 230, 138, 0.85)';
+  ctx.fillText('UNDER / DEALER MAT (2ND • 4TH • 6TH CARD)', dealerMatX, northRowZ + dMatH / 2 - 24);
+
+  // HUKAM Point Card Pedestal Ring in North-East
+  ctx.strokeStyle = 'rgba(234, 179, 8, 0.72)';
+  ctx.lineWidth = 4.5;
+  ctx.beginPath();
+  ctx.arc(hukamX, northRowZ, 195, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.font = '800 22px Georgia, serif';
+  ctx.fillStyle = '#fde68a';
+  ctx.fillText('HUKAM • POINT CARD', hukamX, northRowZ - 216 * vScale);
+
+  // =========================================================================
+  // 2. CENTER DIVIDER RIBBON
+  // =========================================================================
+  const midY = worldToV(-0.42);
+  ctx.strokeStyle = 'rgba(217, 167, 74, 0.55)';
+  ctx.lineWidth = 3.5;
   ctx.beginPath();
   ctx.moveTo(margin + 40, midY);
   ctx.lineTo(width - margin - 40, midY);
@@ -628,56 +1055,91 @@ export function getFeltTableTexture(renderer?: THREE.WebGLRenderer): {
 
   ctx.fillStyle = '#06331b';
   ctx.beginPath();
-  ctx.arc(width / 2, midY, 34, 0, Math.PI * 2);
+  ctx.arc(width / 2, midY, 28, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(217, 167, 74, 0.7)';
+  ctx.strokeStyle = 'rgba(217, 167, 74, 0.85)';
   ctx.stroke();
 
-  ctx.font = '700 34px Georgia, serif';
-  ctx.fillStyle = 'rgba(217, 167, 74, 0.22)';
+  ctx.font = '800 26px Georgia, serif';
+  ctx.fillStyle = 'rgba(253, 230, 138, 0.45)';
   ctx.fillText(
-    '♠   R O Y A L   B A I T H A K   •   M A A N G   P A T T A   ♦',
+    '↺  A N T I - C L O C K W I S E   R I N G   ( A → B → C → D → E → F )  ↺',
     width / 2,
-    midY - 24
+    midY - 20
   );
 
-  const matZ = worldToV(1.25);
-  const playerX = worldToU(-1.85);
-  const dealerX = worldToU(1.85);
-  const matW = 680;
-  const matH = 470;
+  // =========================================================================
+  // 3. SOUTH SIDE: BAHAR (CUTTER'S SIDE) MAT + SEATS B, C, D, E, F
+  // =========================================================================
+  const playerMatZ = worldToV(0.52);
+  const playerMatX = worldToU(0);
+  const pMatW = 660;
+  const pMatH = 320 * vScale;
 
-  ctx.fillStyle = 'rgba(14, 116, 144, 0.08)';
-  drawRoundedRect(ctx, playerX - matW / 2, matZ - matH / 2, matW, matH, 26);
+  ctx.fillStyle = 'rgba(14, 116, 144, 0.16)';
+  drawRoundedRect(ctx, playerMatX - pMatW / 2, playerMatZ - pMatH / 2, pMatW, pMatH, 24);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(217, 167, 74, 0.68)';
-  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.82)';
+  ctx.lineWidth = 4.5;
   ctx.stroke();
-  ctx.strokeStyle = 'rgba(56, 189, 248, 0.42)';
-  ctx.lineWidth = 2;
-  drawRoundedRect(ctx, playerX - matW / 2 + 12, matZ - matH / 2 + 12, matW - 24, matH - 24, 18);
-  ctx.stroke();
-
-  ctx.fillStyle = 'rgba(159, 18, 57, 0.08)';
-  drawRoundedRect(ctx, dealerX - matW / 2, matZ - matH / 2, matW, matH, 26);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(217, 167, 74, 0.68)';
-  ctx.lineWidth = 4;
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(244, 63, 94, 0.42)';
-  ctx.lineWidth = 2;
-  drawRoundedRect(ctx, dealerX - matW / 2 + 12, matZ - matH / 2 + 12, matW - 24, matH - 24, 18);
+  ctx.strokeStyle = 'rgba(251, 191, 36, 0.65)';
+  ctx.lineWidth = 2.5;
+  drawRoundedRect(
+    ctx,
+    playerMatX - pMatW / 2 + 10,
+    playerMatZ - pMatH / 2 + 10,
+    pMatW - 20,
+    pMatH - 20,
+    18
+  );
   ctx.stroke();
 
-  ctx.font = '700 32px Georgia, serif';
-  ctx.fillStyle = 'rgba(243, 210, 120, 0.88)';
-  ctx.fillText('ANDAR • PLAYER', playerX, matZ - matH / 2 + 52);
-  ctx.fillText('BAHAR • DEALER', dealerX, matZ - matH / 2 + 52);
+  ctx.font = '800 28px Georgia, serif';
+  ctx.fillStyle = '#bae6fd';
+  ctx.fillText("BAHAR • CUTTER'S SIDE", playerMatX, playerMatZ - pMatH / 2 + 48);
+  ctx.font = '700 19px Georgia, serif';
+  ctx.fillStyle = 'rgba(253, 230, 138, 0.85)';
+  ctx.fillText('CUTTER MAT (1ST • 3RD • 5TH CARD)', playerMatX, playerMatZ + pMatH / 2 - 24);
 
-  ctx.font = '600 20px Georgia, serif';
-  ctx.fillStyle = 'rgba(203, 213, 225, 0.55)';
-  ctx.fillText('1ST • 3RD • 5TH CARD', playerX, matZ + matH / 2 - 28);
-  ctx.fillText('2ND • 4TH • 6TH CARD', dealerX, matZ + matH / 2 - 28);
+  // 3 South Betting Bays (Seats C, D, E)
+  const slots = [
+    { id: 1, wx: -2.65, wz: 2.18, title: 'SEAT C • BOT ARYAN', sub: 'ANTI-CLOCKWISE #3' },
+    { id: 2, wx: 0, wz: 2.32, title: 'SEAT D • YOU (VIP)', sub: 'ANTI-CLOCKWISE #4' },
+    { id: 3, wx: 2.65, wz: 2.18, title: 'SEAT E • BOT ZOYA', sub: 'ANTI-CLOCKWISE #5' },
+  ];
+
+  for (const s of slots) {
+    const sx = worldToU(s.wx);
+    const sy = worldToV(s.wz);
+    const boxW = 430;
+    const boxH = 230 * vScale;
+
+    ctx.fillStyle = s.id === 2 ? 'rgba(245, 158, 11, 0.14)' : 'rgba(6, 78, 59, 0.38)';
+    drawRoundedRect(ctx, sx - boxW / 2, sy - boxH / 2, boxW, boxH, 22);
+    ctx.fill();
+
+    ctx.strokeStyle = s.id === 2 ? 'rgba(251, 191, 36, 0.92)' : 'rgba(217, 167, 74, 0.68)';
+    ctx.lineWidth = s.id === 2 ? 5 : 3.5;
+    ctx.stroke();
+
+    // Inner dashed casino betting circle
+    ctx.save();
+    ctx.beginPath();
+    ctx.setLineDash([10, 6]);
+    ctx.strokeStyle = 'rgba(253, 230, 138, 0.75)';
+    ctx.lineWidth = 2.8;
+    ctx.arc(sx, sy + 12 * vScale, 54, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.font = '800 24px Georgia, serif';
+    ctx.fillStyle = s.id === 2 ? '#fde68a' : '#fef08a';
+    ctx.fillText(s.title, sx, sy - boxH / 2 + 38);
+
+    ctx.font = '700 17px Georgia, serif';
+    ctx.fillStyle = 'rgba(226, 232, 240, 0.82)';
+    ctx.fillText(s.sub, sx, sy + boxH / 2 - 20);
+  }
 
   const bumpCanvas = document.createElement('canvas');
   bumpCanvas.width = 256;
@@ -695,33 +1157,134 @@ export function getFeltTableTexture(renderer?: THREE.WebGLRenderer): {
 
   const map = new THREE.CanvasTexture(canvas);
   map.colorSpace = THREE.SRGBColorSpace;
+  map.minFilter = THREE.LinearMipmapLinearFilter;
+  map.magFilter = THREE.LinearFilter;
+  map.generateMipmaps = true;
+  map.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 16;
+
   const bumpMap = new THREE.CanvasTexture(bumpCanvas);
   bumpMap.wrapS = THREE.RepeatWrapping;
   bumpMap.wrapT = THREE.RepeatWrapping;
   bumpMap.repeat.set(24, 18);
-
-  if (renderer) {
-    map.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  }
 
   cardTextureCache.set(mapKey, map);
   cardTextureCache.set(bumpKey, bumpMap);
   return { map, bumpMap };
 }
 
-export function getSoftShadowTexture(): THREE.CanvasTexture {
-  const key = 'soft_contact_shadow';
+export function getDealerPuckTexture(renderer?: THREE.WebGLRenderer): THREE.CanvasTexture {
+  const key = 'dealer_crown_puck_tex_hd';
   if (cardTextureCache.has(key)) {
     return cardTextureCache.get(key)!;
   }
 
-  const size = 128;
+  const size = 512;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
 
-  const grad = ctx.createRadialGradient(size / 2, size / 2, 8, size / 2, size / 2, size / 2);
+  const cx = size / 2;
+  const cy = size / 2;
+
+  const grad = ctx.createRadialGradient(cx, cy, 24, cx, cy, size / 2 - 8);
+  grad.addColorStop(0, '#fef08a');
+  grad.addColorStop(0.55, '#f59e0b');
+  grad.addColorStop(1, '#78350f');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, size / 2 - 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#090d16';
+  ctx.beginPath();
+  ctx.arc(cx, cy, size / 2 - 48, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#fbbf24';
+  ctx.lineWidth = 8;
+  ctx.setLineDash([16, 12]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, size / 2 - 64, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#fde68a';
+  ctx.font = '900 68px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('👑', cx, cy - 52);
+  ctx.font = '900 60px Georgia, serif';
+  ctx.fillText('DEALER', cx, cy + 36);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 16;
+  cardTextureCache.set(key, tex);
+  return tex;
+}
+
+export function getTablePlaqueTexture(
+  title: string,
+  subtitle: string,
+  accentColor = '#fbbf24',
+  bgHex = '#090d16',
+  renderer?: THREE.WebGLRenderer
+): THREE.CanvasTexture {
+  const key = `plaque_hd_${title}_${subtitle}_${accentColor}_${bgHex}`;
+  if (cardTextureCache.has(key)) {
+    return cardTextureCache.get(key)!;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = bgHex;
+  drawRoundedRect(ctx, 12, 12, 1000, 232, 40);
+  ctx.fill();
+
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 12;
+  ctx.stroke();
+
+  ctx.fillStyle = accentColor;
+  ctx.font = '900 72px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(title, 512, 96);
+
+  ctx.fillStyle = '#f1f5f9';
+  ctx.font = '700 46px Georgia, serif';
+  ctx.fillText(subtitle, 512, 182);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 16;
+  cardTextureCache.set(key, tex);
+  return tex;
+}
+
+export function getSoftShadowTexture(): THREE.CanvasTexture {
+  const key = 'soft_contact_shadow_hd';
+  if (cardTextureCache.has(key)) {
+    return cardTextureCache.get(key)!;
+  }
+
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 16, size / 2, size / 2, size / 2);
   grad.addColorStop(0, 'rgba(0, 0, 0, 0.75)');
   grad.addColorStop(0.55, 'rgba(0, 0, 0, 0.35)');
   grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
@@ -736,14 +1299,16 @@ export function getSoftShadowTexture(): THREE.CanvasTexture {
 export function getChipTexture(
   denom: number,
   color: string,
-  stripeColor = '#f8fafc'
+  stripeColor = '#f8fafc',
+  renderer?: THREE.WebGLRenderer
 ): THREE.CanvasTexture {
-  const cacheKey = `chip_v2_${denom}_${color}`;
+  const cacheKey = `chip_v3_hd_${denom}_${color}`;
   if (cardTextureCache.has(cacheKey)) {
     return cardTextureCache.get(cacheKey)!;
   }
 
-  const size = 256;
+  // 512x512 High-DPI chip texture
+  const size = 512;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -751,7 +1316,7 @@ export function getChipTexture(
 
   const cx = size / 2;
   const cy = size / 2;
-  const r = size / 2 - 4;
+  const r = size / 2 - 8;
 
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -764,35 +1329,39 @@ export function getChipTexture(
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(angle);
-    ctx.fillRect(r - 22, -9, 22, 18);
+    ctx.fillRect(r - 44, -18, 44, 36);
     ctx.restore();
   }
 
   ctx.strokeStyle = '#d97706';
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 8;
   ctx.beginPath();
-  ctx.arc(cx, cy, r - 30, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r - 60, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.fillStyle = '#0f172a';
   ctx.beginPath();
-  ctx.arc(cx, cy, r - 42, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r - 84, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.strokeStyle = '#fbbf24';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 6;
   ctx.beginPath();
-  ctx.arc(cx, cy, r - 46, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r - 92, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.fillStyle = '#fef3c7';
-  ctx.font = '900 44px Georgia, serif';
+  ctx.font = '900 88px Georgia, serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(denom >= 1000 ? `${denom / 1000}K` : `${denom}`, cx, cy);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 16;
   cardTextureCache.set(cacheKey, texture);
   return texture;
 }

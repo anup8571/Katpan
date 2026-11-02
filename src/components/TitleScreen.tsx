@@ -54,10 +54,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({ onStart }) => {
           style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
           className="text-2xl sm:text-4xl font-black tracking-widest text-amber-300"
         >
-          KAT PAN
+          ROYAL KATTI
         </h1>
         <p className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.28em] text-amber-200/75 mt-1">
-         Haywa Gang Maang Patta • Split-Deck 3D Table
+          Maang Patta • Split-Deck 3D Table
         </p>
       </div>
 
