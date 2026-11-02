@@ -1,4 +1,5 @@
 import React from 'react';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface TitleScreenProps {
   onStart: () => void;
@@ -76,6 +77,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({ onStart }) => {
             SPACE / ENTER
           </span>
         </button>
+
+        <PWAInstallButton />
 
         <p className="text-[11px] text-slate-300/85 font-medium tracking-wide text-center">
           Space / Enter Deal · Drag Table to Look · C Camera · H Hide Controls · Esc Pause

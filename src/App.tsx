@@ -14,6 +14,7 @@ import { TitleScreen } from './components/TitleScreen';
 import { HUD } from './components/HUD';
 import { ControlDock } from './components/ControlDock';
 import { PauseModal, RoundOverModal } from './components/Modals';
+import { OfflineIndicator } from './components/PWAInstallButton';
 
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -401,6 +402,7 @@ export default function App() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans select-none">
+      <OfflineIndicator />
       {/* 3D WebGL Canvas Mount */}
       <div ref={mountRef} className="absolute inset-0 w-full h-full" />
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card, GameStats } from '../game/types';
 import { Volume2, VolumeX, Pause, Crown } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HUDProps {
   balance: number;
@@ -101,6 +102,8 @@ export const HUD: React.FC<HUDProps> = ({
                 ₹{balance.toLocaleString()}
               </span>
             </div>
+
+            <PWAInstallButton compact />
 
             {/* Audio Toggle */}
             <button
