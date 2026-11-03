@@ -21,11 +21,17 @@ import {
   prepareSeatsForNextRound,
   resolveNextDealerAndCutter,
   getBettingOrder,
+  getStepByStepBettingOrder,
   generateBotBet,
   generateRandomWager,
   settleConstantCurrencyRound,
   generateBotDealDelayMs,
+  calculatePoolTotals,
+  isPoolBalanced,
+  balancePools,
+  settleBalancedRound,
 } from './game/rules';
+import { decideBotInitialBet, decideNextBotEqualizeAction } from './game/botAI';
 import { soundEngine } from './game/audio';
 import { TitleScreen } from './components/TitleScreen';
 import { HUD } from './components/HUD';
@@ -92,7 +98,7 @@ export default function App() {
   const [seats, setSeats] = useState<SeatInfo[]>(() => createInitialSeats('D'));
 
   // Deck & Card states
-  const [mainDeck, setMainDeck] = useState<Card[]>([]);
+  const [mainDeck, setMainDeck] = useState<Card[]>(() => shuffleDeck(createStandardDeck()));
   const [firstDeck, setFirstDeck] = useState<Card[]>([]);
   const [secondDeck, setSecondDeck] = useState<Card[]>([]);
   const [pointCard, setPointCard] = useState<Card | null>(null);
@@ -215,12 +221,25 @@ export default function App() {
       setHumanSeat(user.preferredSeat as SeatId);
       humanSeatRef.current = user.preferredSeat as SeatId;
     }
+    const displayName = user.displayName || user.playerId || 'You';
+    setSeats((prev) =>
+      prev.map((s) =>
+        s.id === (user.preferredSeat || humanSeatRef.current)
+          ? { ...s, name: displayName, shortName: displayName }
+          : s
+      )
+    );
   }, []);
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     setAuthToken(null);
     setCurrentUser(null);
+    setSeats((prev) =>
+      prev.map((s) =>
+        s.id === humanSeatRef.current ? { ...s, name: 'You', shortName: 'You' } : s
+      )
+    );
   }, []);
 
   useEffect(() => {
@@ -232,6 +251,14 @@ export default function App() {
       .then((data) => {
         if (data?.user) {
           setCurrentUser(data.user);
+          const displayName = data.user.displayName || data.user.playerId || 'You';
+          setSeats((prev) =>
+            prev.map((s) =>
+              s.id === humanSeatRef.current
+                ? { ...s, name: displayName, shortName: displayName }
+                : s
+            )
+          );
         }
       })
       .catch(() => {
@@ -542,42 +569,70 @@ export default function App() {
       isBusyRef.current = true;
       setActiveActorSeat(actorSeat);
 
-      soundEngine.playCardFlick(1.08);
-      const { firstDeck: firstHalf, secondDeck: secondHalf, pointCard: revealedPoint } = splitDeck(
-        mainDeckRef.current,
-        chosenCutIndex
-      );
+      try {
+        const safeCutIndex =
+          typeof chosenCutIndex === 'number' && !isNaN(chosenCutIndex)
+            ? Math.max(8, Math.min(44, Math.floor(chosenCutIndex)))
+            : typeof cutIndexRef.current === 'number' && !isNaN(cutIndexRef.current)
+            ? cutIndexRef.current
+            : 26;
 
-      setFirstDeck(firstHalf);
-      firstDeckRef.current = firstHalf;
-      setSecondDeck(secondHalf);
-      secondDeckRef.current = secondHalf;
-      setPointCard(revealedPoint);
-      pointCardRef.current = revealedPoint;
+        setCutIndex(safeCutIndex);
+        cutIndexRef.current = safeCutIndex;
 
-      const actorLabel =
-        actorSeat === humanSeatRef.current ? `You (Seat ${actorSeat})` : `Bot ${actorSeat}`;
-      setStatusText(
-        `✂️ ${actorLabel} cuts at #${chosenCutIndex} → Hukam is ${revealedPoint.label}!`
-      );
+        // Ensure active main deck has valid cards
+        if (!mainDeckRef.current || mainDeckRef.current.length < 3) {
+          mainDeckRef.current = shuffleDeck(createStandardDeck());
+          setMainDeck(mainDeckRef.current);
+        }
 
-      broadcastMultiplayerAction('cut', {
-        cutIndex: chosenCutIndex,
-        pointCard: revealedPoint.label,
-        announcement: `Cut at #${chosenCutIndex} → Hukam ${revealedPoint.label}`,
-      });
+        soundEngine.playCardFlick(1.08);
+        const { firstDeck: firstHalf, secondDeck: secondHalf, pointCard: revealedPoint } = splitDeck(
+          mainDeckRef.current,
+          safeCutIndex
+        );
 
-      await scene.animateSplitAndReveal(chosenCutIndex, revealedPoint);
+        setFirstDeck(firstHalf);
+        firstDeckRef.current = firstHalf;
+        setSecondDeck(secondHalf);
+        secondDeckRef.current = secondHalf;
+        setPointCard(revealedPoint);
+        pointCardRef.current = revealedPoint;
 
-      // Transition to Betting Phase starting from Cutter in anti-clockwise order!
-      const order = getBettingOrder(dealerSeatRef.current, cutterSeatRef.current);
-      const firstBetter = order[0]; // Always Cutter!
+        const actorLabel =
+          actorSeat === humanSeatRef.current ? `You (Seat ${actorSeat})` : `Bot ${actorSeat}`;
+        setStatusText(
+          `✂️ ${actorLabel} cuts at #${safeCutIndex} → Hukam is ${revealedPoint.label}!`
+        );
 
-      setPhase('betting');
-      phaseRef.current = 'betting';
-      setActiveActorSeat(firstBetter);
-      setIsBusy(false);
-      isBusyRef.current = false;
+        broadcastMultiplayerAction('cut', {
+          cutIndex: safeCutIndex,
+          pointCard: revealedPoint.label,
+          announcement: `Cut at #${safeCutIndex} → Hukam ${revealedPoint.label}`,
+        });
+
+        try {
+          await scene.animateSplitAndReveal(safeCutIndex, revealedPoint);
+        } catch (animErr) {
+          console.warn('Split animation warning:', animErr);
+        }
+
+        // Transition to Betting Phase starting from Cutter in anti-clockwise order!
+        const order = getBettingOrder(dealerSeatRef.current, cutterSeatRef.current);
+        const firstBetter = order[0]; // Always Cutter!
+
+        setPhase('betting');
+        phaseRef.current = 'betting';
+        setActiveActorSeat(firstBetter);
+      } catch (err) {
+        console.error('Error in executeCutAndStartBetting:', err);
+        setPhase('betting');
+        phaseRef.current = 'betting';
+        setActiveActorSeat(cutterSeatRef.current);
+      } finally {
+        setIsBusy(false);
+        isBusyRef.current = false;
+      }
     },
     [broadcastMultiplayerAction]
   );
@@ -605,9 +660,11 @@ export default function App() {
       setHumanSeat(nextHuman);
       humanSeatRef.current = nextHuman;
 
+      const humanName = currentUser?.displayName || currentUser?.playerId || 'You';
       const updatedSeats = prepareSeatsForNextRound(
         seatsRef.current,
-        nextHuman
+        nextHuman,
+        humanName
       );
       setSeats(updatedSeats);
       seatsRef.current = updatedSeats;
@@ -693,6 +750,21 @@ export default function App() {
     [clearTimers, executeCutAndStartBetting, stopAutoDeal]
   );
 
+  // Automatically start game if ?autostart=1 query param is set
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('autostart') === '1') {
+        const timer = setTimeout(() => {
+          startNewRound('A', 'B', humanSeatRef.current);
+        }, 400);
+        return () => clearTimeout(timer);
+      }
+    } catch {
+      // Ignore
+    }
+  }, [startNewRound]);
+
   // Human Dealer Manual Shuffle Action
   const handlePlayerShuffle = useCallback(async () => {
     const scene = sceneRef.current;
@@ -751,7 +823,7 @@ export default function App() {
 
   // Human Cutter Confirm Cut
   const handleConfirmCut = useCallback(
-    async (overrideIdx?: number) => {
+    async (overrideIdx?: number | unknown) => {
       if (
         isBusyRef.current ||
         phaseRef.current !== 'cutting' ||
@@ -759,7 +831,13 @@ export default function App() {
       ) {
         return;
       }
-      const chosenCut = overrideIdx ?? cutIndexRef.current;
+      const rawCut =
+        typeof overrideIdx === 'number' && !isNaN(overrideIdx)
+          ? overrideIdx
+          : typeof cutIndexRef.current === 'number' && !isNaN(cutIndexRef.current)
+          ? cutIndexRef.current
+          : 26;
+      const chosenCut = Math.max(8, Math.min(44, Math.floor(rawCut)));
       setCutIndex(chosenCut);
       cutIndexRef.current = chosenCut;
       await executeCutAndStartBetting(chosenCut, humanSeatRef.current);
@@ -767,79 +845,217 @@ export default function App() {
     [executeCutAndStartBetting]
   );
 
-  // Sequential Anti-Clockwise Betting Loop (starting from Cutter)
+  // Step-by-Step Betting Loop:
+  // 1. Cutter bets first on Blue ('player')
+  // 2. Shuffler bets second on Red ('dealer')
+  // 3. Other players bet on Red or Blue, or choose to Skip
+  // 4. Once all seats have bet/skipped, enter 'balancing' phase
+  // 5. Card deal cannot start unless redTotal === blueTotal!
   useEffect(() => {
     if (phase !== 'betting' || isBusy) return;
 
-    const order = getBettingOrder(dealerSeat, cutterSeat);
+    const order = getStepByStepBettingOrder(dealerSeat, cutterSeat);
     const nextUnbetSeatId = order.find((id) => {
       const s = seats.find((seat) => seat.id === id);
-      return s && (!s.betSide || s.betAmount <= 0);
+      return s && (!s.betSide || s.betAmount <= 0) && s.betStatus !== 'skipped';
     });
 
-    // All 5 non-dealer seats have placed their bets -> Move to Dealing phase!
+    // All seats have placed their bets or skipped -> Check Pool Balance!
     if (!nextUnbetSeatId) {
-      setPhase('dealing');
-      phaseRef.current = 'dealing';
-      setActiveActorSeat(dealerSeat);
-      const dealerIsHuman = dealerSeat === humanSeat;
-      setStatusText(
-        dealerIsHuman
-          ? `🃏 All bets locked! You are Seat ${dealerSeat} (Under) — click Deal Card or Auto Deal!`
-          : `🃏 All bets locked! Bot ${dealerSeat} (Under) is dealing cards...`
-      );
+      const totals = calculatePoolTotals(seatsRef.current);
+      if (totals.isBalanced) {
+        setPhase('dealing');
+        phaseRef.current = 'dealing';
+        setActiveActorSeat(dealerSeat);
+        const dealerIsHuman = dealerSeat === humanSeat;
+        setStatusText(
+          dealerIsHuman
+            ? `🃏 Bets balanced (${totals.redTotal} RC each)! You are Shuffler (${dealerSeat}) — click Deal Card or Auto Deal!`
+            : `🃏 Bets balanced (${totals.redTotal} RC each)! Bot ${dealerSeat} is dealing cards...`
+        );
+      } else {
+        setPhase('balancing');
+        phaseRef.current = 'balancing';
+        setActiveActorSeat(null);
+        setStatusText(
+          `⚖️ Bets Unbalanced! Red: ${totals.redTotal} RC vs Blue: ${totals.blueTotal} RC (Diff: ${totals.difference} RC). Equalise bets to start deal!`
+        );
+      }
       return;
     }
 
     setActiveActorSeat(nextUnbetSeatId);
 
-    // If it's the Human's seat turn to bet, wait for their click in ControlDock
+    const isCutterTurn = nextUnbetSeatId === cutterSeat;
+    const isShufflerTurn = nextUnbetSeatId === dealerSeat;
+    const targetSeatObj = seats.find((s) => s.id === nextUnbetSeatId);
+    const targetName = targetSeatObj?.name || `Seat ${nextUnbetSeatId}`;
+
+    // If it's Human's turn to bet:
     if (nextUnbetSeatId === humanSeat) {
-      const isCutter = nextUnbetSeatId === cutterSeat;
-      setStatusText(
-        isCutter
-          ? `💰 You are Cutter (Seat ${humanSeat} • Bahar)! Confirm your wager amount.`
-          : `💰 Your Turn to Bet (Seat ${humanSeat})! Pick Under (${dealerSeat}) or Bahar (${cutterSeat}).`
-      );
+      if (isCutterTurn) {
+        setStatusText(
+          `💰 Step 3: You are Cutter (${targetName})! Place initial bet on Blue side.`
+        );
+      } else if (isShufflerTurn) {
+        setStatusText(
+          `💰 Step 4: You are Shuffler (${targetName})! Place initial bet on Red side.`
+        );
+      } else {
+        setStatusText(
+          `💰 Step 5: Your Turn to Bet (${targetName})! Bet Red, Bet Blue, or Skip Bet.`
+        );
+      }
       return;
     }
 
-    // Otherwise, it's a Bot seat's turn -> Automatically place random bet after a crisp step delay
-    const delay = botFastMode ? 200 : 440;
+    // Otherwise, Bot seat's turn with veritable decision algorithm:
+    const delay = botFastMode ? 220 : 460;
     const timer = window.setTimeout(() => {
       if (phaseRef.current !== 'betting') return;
       const targetSeat = seatsRef.current.find((s) => s.id === nextUnbetSeatId);
-      if (!targetSeat || (targetSeat.betSide && targetSeat.betAmount > 0)) return;
+      if (
+        !targetSeat ||
+        (targetSeat.betSide && targetSeat.betAmount > 0) ||
+        targetSeat.betStatus === 'skipped'
+      ) {
+        return;
+      }
 
-      const isBotCutter = nextUnbetSeatId === cutterSeatRef.current;
-      const { betSide, betAmount } = generateBotBet(
+      const decision = decideBotInitialBet(
         nextUnbetSeatId,
-        isBotCutter,
-        targetSeat.balance
+        seatsRef.current,
+        dealerSeat,
+        cutterSeat
       );
-      soundEngine.playChipClick();
 
+      if (decision.betStatus === 'skipped' || !decision.betSide || decision.betAmount <= 0) {
+        const nextSeats = seatsRef.current.map((s) =>
+          s.id === nextUnbetSeatId
+            ? { ...s, betSide: null, betAmount: 0, betStatus: 'skipped' as const }
+            : s
+        );
+        setSeats(nextSeats);
+        seatsRef.current = nextSeats;
+        setStatusText(`🟡 ${decision.reasoning} (indicator stays yellow)`);
+        return;
+      }
+
+      soundEngine.playChipClick();
       const nextSeats = seatsRef.current.map((s) =>
         s.id === nextUnbetSeatId
-          ? { ...s, betSide, betAmount }
+          ? {
+              ...s,
+              betSide: decision.betSide,
+              betAmount: decision.betAmount,
+              betStatus: 'placed' as const,
+            }
           : s
       );
       setSeats(nextSeats);
       seatsRef.current = nextSeats;
 
-      const sideName =
-        betSide === 'dealer'
-          ? `UNDER (Seat ${dealerSeatRef.current})`
-          : `BAHAR (Seat ${cutterSeatRef.current})`;
-      setStatusText(
-        `💰 Bot ${nextUnbetSeatId} bets ${betAmount} RC on ${sideName}`
-      );
+      setStatusText(`💰 ${decision.reasoning}`);
     }, delay);
 
     return () => window.clearTimeout(timer);
   }, [phase, isBusy, seats, dealerSeat, cutterSeat, humanSeat, botFastMode]);
 
-  // Human Places Bet during their turn in the anti-clockwise betting sequence
+  // Autonomous Bot Equalisation Loop:
+  // When phase is 'balancing', bots take veritable turns to equalize the pool towards redTotal === blueTotal!
+  useEffect(() => {
+    if (phase !== 'balancing' || isBusy) return;
+
+    const totals = calculatePoolTotals(seats);
+    if (totals.isBalanced) {
+      soundEngine.playHukamChime();
+      setPhase('dealing');
+      phaseRef.current = 'dealing';
+      setActiveActorSeat(dealerSeat);
+      const isHumanD = dealerSeat === humanSeat;
+      setStatusText(
+        isHumanD
+          ? `✨ Pool perfectly balanced (${totals.redTotal} RC each)! You are Shuffler (${dealerSeat}) — click Deal Card or Auto Deal.`
+          : `✨ Pool perfectly balanced (${totals.redTotal} RC each)! Bot ${dealerSeat} is ready to deal cards...`
+      );
+      return;
+    }
+
+    const delay = botFastMode ? 320 : 680;
+    const timer = window.setTimeout(() => {
+      if (phaseRef.current !== 'balancing') return;
+
+      const currentTotals = calculatePoolTotals(seatsRef.current);
+      if (currentTotals.isBalanced) {
+        soundEngine.playHukamChime();
+        setPhase('dealing');
+        phaseRef.current = 'dealing';
+        setActiveActorSeat(dealerSeat);
+        return;
+      }
+
+      const action = decideNextBotEqualizeAction(
+        seatsRef.current,
+        dealerSeat,
+        cutterSeat,
+        humanSeat
+      );
+
+      if (!action) {
+        // Fallback: If no single bot can adjust further, finalize balance via balancePools
+        const equalized = balancePools(seatsRef.current);
+        setSeats(equalized);
+        seatsRef.current = equalized;
+        const finalTotals = calculatePoolTotals(equalized);
+        if (finalTotals.isBalanced) {
+          soundEngine.playHukamChime();
+          setPhase('dealing');
+          phaseRef.current = 'dealing';
+          setActiveActorSeat(dealerSeat);
+          setStatusText(`✨ Table balanced (${finalTotals.redTotal} RC each)! Ready to deal cards.`);
+        }
+        return;
+      }
+
+      soundEngine.playChipClick();
+      const updatedSeats = seatsRef.current.map((s) => {
+        if (s.id === action.botSeat) {
+          return {
+            ...s,
+            betSide: action.side,
+            betAmount: action.newBetAmount,
+            betStatus: action.newBetAmount > 0 ? ('placed' as const) : ('skipped' as const),
+          };
+        }
+        return s;
+      });
+
+      setSeats(updatedSeats);
+      seatsRef.current = updatedSeats;
+
+      const newTotals = calculatePoolTotals(updatedSeats);
+      if (newTotals.isBalanced) {
+        soundEngine.playHukamChime();
+        setPhase('dealing');
+        phaseRef.current = 'dealing';
+        setActiveActorSeat(dealerSeat);
+        const isHumanD = dealerSeat === humanSeat;
+        setStatusText(
+          isHumanD
+            ? `✨ ${action.reasoning} → BALANCED (${newTotals.redTotal} RC)! Click Deal Card or Auto Deal.`
+            : `✨ ${action.reasoning} → BALANCED (${newTotals.redTotal} RC)! Starting card deal...`
+        );
+      } else {
+        setStatusText(
+          `⚖️ ${action.reasoning} (Red: ${newTotals.redTotal} RC vs Blue: ${newTotals.blueTotal} RC • Diff: ${newTotals.difference} RC)`
+        );
+      }
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [phase, isBusy, seats, dealerSeat, cutterSeat, humanSeat, botFastMode]);
+
+  // Human Places Bet during their turn
   const handlePlaceHumanBet = useCallback(
     (chosenSide: Side) => {
       if (
@@ -850,38 +1066,119 @@ export default function App() {
         return;
       }
 
-      // Cutter is strictly Bahar ('player' side = main opponent of Under/Shuffler)
-      const enforcedSide: Side =
-        humanSeatRef.current === cutterSeatRef.current ? 'player' : chosenSide;
+      const hSeat = humanSeatRef.current;
+      const isCutter = hSeat === cutterSeatRef.current;
+      const isShuffler = hSeat === dealerSeatRef.current;
+      const enforcedSide: Side = isCutter ? 'player' : isShuffler ? 'dealer' : chosenSide;
 
       soundEngine.playChipClick();
-      const hSeat = humanSeatRef.current;
       const humanObj = seatsRef.current.find((s) => s.id === hSeat);
       const maxAllowed = humanObj ? Math.max(50, humanObj.balance) : 1000;
       const wager = Math.min(currentBetRef.current, maxAllowed);
 
       const nextSeats = seatsRef.current.map((s) =>
         s.id === hSeat
-          ? { ...s, betSide: enforcedSide, betAmount: wager }
+          ? { ...s, betSide: enforcedSide, betAmount: wager, betStatus: 'placed' as const }
           : s
       );
       setSeats(nextSeats);
       seatsRef.current = nextSeats;
 
-      const sideName =
-        enforcedSide === 'dealer'
-          ? `UNDER (Seat ${dealerSeatRef.current})`
-          : `BAHAR (Seat ${cutterSeatRef.current})`;
-      setStatusText(`💰 You (Seat ${hSeat}) bet ${wager} RC on ${sideName}!`);
+      const sideLabel = enforcedSide === 'dealer' ? 'RED (Shuffler)' : 'BLUE (Cutter)';
+      setStatusText(`💰 You (Seat ${hSeat}) bet ${wager} RC on ${sideLabel}!`);
 
       broadcastMultiplayerAction('bet', {
         wager,
         side: enforcedSide,
-        announcement: `Bet ${wager} RC on ${sideName}`,
+        announcement: `Bet ${wager} RC on ${sideLabel}`,
       });
     },
     [activeActorSeat, broadcastMultiplayerAction]
   );
+
+  // Human Skips Bet
+  const handleSkipHumanBet = useCallback(() => {
+    if (
+      phaseRef.current !== 'betting' ||
+      isBusyRef.current ||
+      activeActorSeat !== humanSeatRef.current
+    ) {
+      return;
+    }
+
+    soundEngine.playChipClick();
+    const hSeat = humanSeatRef.current;
+    const nextSeats = seatsRef.current.map((s) =>
+      s.id === hSeat
+        ? { ...s, betSide: null, betAmount: 0, betStatus: 'skipped' as const }
+        : s
+    );
+    setSeats(nextSeats);
+    seatsRef.current = nextSeats;
+    setStatusText(`🟡 You (Seat ${hSeat}) skipped betting (indicator stays yellow)`);
+  }, [activeActorSeat]);
+
+  // Quick Balance Pools Helper (Equalizes difference so game dealing can start)
+  const handleQuickBalance = useCallback(() => {
+    soundEngine.playChipClick();
+    const balancedSeats = balancePools(seatsRef.current);
+    setSeats(balancedSeats);
+    seatsRef.current = balancedSeats;
+    const totals = calculatePoolTotals(balancedSeats);
+    if (totals.isBalanced) {
+      setPhase('dealing');
+      phaseRef.current = 'dealing';
+      setActiveActorSeat(dealerSeatRef.current);
+      const isHumanD = dealerSeatRef.current === humanSeatRef.current;
+      setStatusText(
+        isHumanD
+          ? `✨ Bets balanced (${totals.redTotal} RC each)! Click Deal Card or Auto Deal.`
+          : `✨ Bets balanced (${totals.redTotal} RC each)! Bot ${dealerSeatRef.current} is dealing...`
+      );
+    }
+  }, []);
+
+  // Adjust Bet (+/- 50 RC) during Balancing phase
+  const handleAdjustBet = useCallback((side: 'dealer' | 'player', delta: number) => {
+    soundEngine.playChipClick();
+    const currentSeats = seatsRef.current;
+    let target = currentSeats.find((s) => s.id === humanSeatRef.current && s.betSide === side);
+    if (!target) {
+      target = currentSeats.find((s) => !s.isHuman && s.betSide === side);
+    }
+    if (!target) {
+      target = currentSeats.find(
+        (s) => !s.isHuman && (s.betStatus === 'skipped' || s.betAmount === 0 || !s.betSide)
+      );
+    }
+    if (!target) return;
+
+    const newAmount = Math.max(0, target.betAmount + delta);
+    const nextSeats = currentSeats.map((s) =>
+      s.id === target!.id
+        ? {
+            ...s,
+            betSide: newAmount > 0 ? side : null,
+            betAmount: newAmount,
+            betStatus: newAmount > 0 ? ('placed' as const) : ('skipped' as const),
+          }
+        : s
+    );
+    setSeats(nextSeats);
+    seatsRef.current = nextSeats;
+
+    const totals = calculatePoolTotals(nextSeats);
+    if (totals.isBalanced) {
+      setPhase('dealing');
+      phaseRef.current = 'dealing';
+      setActiveActorSeat(dealerSeatRef.current);
+      setStatusText(`✨ Bets balanced (${totals.redTotal} RC each)! Ready to deal cards.`);
+    } else {
+      setStatusText(
+        `⚖️ Adjusted: Red ${totals.redTotal} RC vs Blue ${totals.blueTotal} RC (Diff: ${totals.difference} RC)`
+      );
+    }
+  }, []);
 
   // Human Randomizes Bet Button
   const handleRandomizeBet = useCallback(() => {
@@ -973,10 +1270,9 @@ export default function App() {
       setPrevDealerSeat(dSeat);
       setPrevCutterSeat(cSeat);
 
-      // Zero-sum constant currency settlement between Dealer (Under) and all Bettors
-      const settlement = settleConstantCurrencyRound(
+      // Balanced pool settlement between Red and Blue sides (preserving 100% constant currency)
+      const settlement = settleBalancedRound(
         seatsRef.current,
-        dSeat,
         side
       );
       const settledSeats = settlement.updatedSeats;
@@ -1270,12 +1566,18 @@ export default function App() {
           onChangeCutIndex={handleCutChange}
           onConfirmCut={handleConfirmCut}
           onPlaceHumanBet={handlePlaceHumanBet}
+          onSkipHumanBet={handleSkipHumanBet}
           onDealOne={handleDealCard}
           onAutoDeal={handleToggleAutoDeal}
           isAutoDealing={isAutoDealing}
           botFastMode={botFastMode}
           onToggleBotFastMode={() => setBotFastMode((v) => !v)}
           isBusy={isBusy}
+          redTotal={calculatePoolTotals(seats).redTotal}
+          blueTotal={calculatePoolTotals(seats).blueTotal}
+          isBalanced={calculatePoolTotals(seats).isBalanced}
+          onQuickBalance={handleQuickBalance}
+          onAdjustBet={handleAdjustBet}
         />
       )}
 

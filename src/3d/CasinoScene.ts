@@ -126,6 +126,8 @@ export class CasinoScene {
   private dealerPuckGroup = new THREE.Group();
   private activeSlotHalo!: THREE.Mesh;
   private dealerPlaqueMesh!: THREE.Mesh;
+  private seatGlowRings: Partial<Record<SeatId, THREE.Mesh>> = {};
+  private seatGlowMats: Partial<Record<SeatId, THREE.MeshBasicMaterial>> = {};
   private slotPlaqueMeshes: Record<PlayerSlotId, THREE.Mesh> = {} as Record<
     PlayerSlotId,
     THREE.Mesh
@@ -1622,6 +1624,7 @@ export class CasinoScene {
     ];
 
     const plaqueGeo = new THREE.PlaneGeometry(1.62, 0.44);
+    const glowGeo = new THREE.RingGeometry(0.46, 0.64, 36);
 
     for (const meta of seatMeta) {
       const pos = SEAT_3D_POSITIONS[meta.id];
@@ -1631,6 +1634,21 @@ export class CasinoScene {
       ring.rotation.x = Math.PI / 2;
       ring.position.set(pos.x, 0.025, pos.z);
       this.tableGroup.add(ring);
+
+      // Glowing light ring under player seat:
+      // Red for Shuffler, Blue for Cutter, Yellow for other players (updated dynamically in syncSeats3D)
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: 0xeab308,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.85,
+      });
+      const glowRing = new THREE.Mesh(glowGeo, glowMat);
+      glowRing.rotation.x = -Math.PI / 2;
+      glowRing.position.set(pos.x, 0.016, pos.z);
+      this.tableGroup.add(glowRing);
+      this.seatGlowRings[meta.id] = glowRing;
+      this.seatGlowMats[meta.id] = glowMat;
 
       const plaqueMat = new THREE.MeshBasicMaterial({
         map: getTablePlaqueTexture(
@@ -1659,7 +1677,7 @@ export class CasinoScene {
       if (meta.id === 'E') this.slotPlaqueMeshes[3] = plaqueMesh;
     }
 
-    // Active Cutter Glowing Halo
+    // Active Cutter Glowing Halo Accent
     const haloGeo = new THREE.RingGeometry(0.48, 0.6, 36);
     const haloMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
@@ -1713,39 +1731,70 @@ export class CasinoScene {
     animatePuck = false
   ): Promise<void> {
     for (const s of seats) {
+      const isDealer = s.id === dealerSeat;
+      const isCutter = s.id === cutterSeat;
+
+      // Table Glowing Light Color:
+      // Red for Shuffler, Blue for Cutter, Yellow for other players
+      // When other players bet: indicator shows Red or Blue whichever side they bet, or stays Yellow if they skip
+      let hexColor = 0xeab308; // default yellow
+      let borderColor = '#eab308';
+      let bgColor = '#362b08';
+
+      if (isDealer) {
+        hexColor = 0xef4444; // Red for shuffler
+        borderColor = '#ef4444';
+        bgColor = '#450a0a';
+      } else if (isCutter) {
+        hexColor = 0x3b82f6; // Blue for cutter
+        borderColor = '#3b82f6';
+        bgColor = '#082f49';
+      } else {
+        // Other table players
+        if (s.betStatus === 'skipped') {
+          hexColor = 0xeab308; // Yellow
+          borderColor = '#eab308';
+          bgColor = '#362b08';
+        } else if (s.betSide === 'dealer') {
+          hexColor = 0xef4444; // Red
+          borderColor = '#ef4444';
+          bgColor = '#450a0a';
+        } else if (s.betSide === 'player') {
+          hexColor = 0x3b82f6; // Blue
+          borderColor = '#3b82f6';
+          bgColor = '#082f49';
+        } else {
+          hexColor = 0xeab308; // Yellow default
+          borderColor = '#eab308';
+          bgColor = '#362b08';
+        }
+      }
+
+      // Update 3D glowing halo light color
+      const glowMat = this.seatGlowMats[s.id];
+      if (glowMat) {
+        glowMat.color.setHex(hexColor);
+        glowMat.opacity = isDealer || isCutter || (s.betSide && s.betAmount > 0) ? 0.95 : 0.75;
+      }
+
       const mesh = this.seatPlaqueMeshes[s.id];
       if (!mesh) continue;
 
-      const isDealer = s.id === dealerSeat;
-      const isCutter = s.id === cutterSeat;
-      const title = s.isHuman
-        ? `SEAT ${s.id} • YOU ${isDealer ? '👑' : isCutter ? '✂️' : ''}`
-        : `SEAT ${s.id} • ${s.shortName.toUpperCase()} ${isDealer ? '👑' : isCutter ? '✂️' : ''}`;
+      const playerName = (s.name || s.shortName || `Player ${s.id}`).toUpperCase();
+      let roleTag = isDealer
+        ? '👑 SHUFFLER (RED)'
+        : isCutter
+        ? '✂️ CUTTER (BLUE)'
+        : s.betStatus === 'skipped'
+        ? 'SKIPPED (YELLOW)'
+        : s.betSide === 'dealer'
+        ? `BET RED (${s.betAmount} RC)`
+        : s.betSide === 'player'
+        ? `BET BLUE (${s.betAmount} RC)`
+        : 'WAITING (YELLOW)';
 
-      let sub = isDealer
-        ? `👑 UNDER (SHUFFLER) • ${s.balance} RC`
-        : isCutter
-        ? `✂️ BAHAR CUTTER • ${s.balance} RC`
-        : `${s.balance} RC`;
-      if (!isDealer && s.betSide && s.betAmount > 0) {
-        const sideLabel = s.betSide === 'dealer' ? 'ANDAR' : 'BAHAR';
-        sub = `${isCutter ? '✂️ ' : ''}BET ${s.betAmount} RC (${sideLabel})`;
-      }
-
-      const borderColor = isDealer
-        ? '#f59e0b'
-        : isCutter
-        ? '#38bdf8'
-        : s.isHuman
-        ? '#34d399'
-        : '#fbbf24';
-      const bgColor = isDealer
-        ? '#451a03'
-        : isCutter
-        ? '#082f49'
-        : s.isHuman
-        ? '#064e3b'
-        : '#090d16';
+      const title = `${playerName} • ${roleTag}`;
+      const sub = `${s.balance} RC`;
 
       const mat = mesh.material as THREE.MeshBasicMaterial;
       mat.map = getTablePlaqueTexture(title.trim(), sub, borderColor, bgColor, this.renderer);
@@ -2077,7 +2126,14 @@ export class CasinoScene {
     this.renderDeckStacks(deck1Remain, deck2Total - 1);
     if (onSplitLanded) onSplitLanded();
 
-    const cardGroup = this.createCardGroup(pointCard, 'blue');
+    const safePointCard: Card = pointCard || {
+      id: 'A_spades',
+      suit: 'spades',
+      rank: 'A',
+      isRed: false,
+      label: 'A♠',
+    };
+    const cardGroup = this.createCardGroup(safePointCard, 'blue');
     cardGroup.position.set(DECK2_POS.x, 0.14, DECK2_POS.z);
     cardGroup.rotation.set(Math.PI, 0, 0);
     this.tableGroup.add(cardGroup);

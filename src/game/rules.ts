@@ -39,29 +39,33 @@ export const RANKS: Rank[] = [
 export const CHIP_VALUES = [50, 100, 250, 500] as const;
 
 export const DEFAULT_SEAT_NAMES: Record<SeatId, { name: string; shortName: string }> = {
-  A: { name: 'Bot Nawab', shortName: 'Nawab' },
-  B: { name: 'Bot Kabir', shortName: 'Kabir' },
-  C: { name: 'Bot Aryan', shortName: 'Aryan' },
+  A: { name: 'Vikram', shortName: 'Vikram' },
+  B: { name: 'Kabir', shortName: 'Kabir' },
+  C: { name: 'Aryan', shortName: 'Aryan' },
   D: { name: 'You', shortName: 'You' },
-  E: { name: 'Bot Zoya', shortName: 'Zoya' },
-  F: { name: 'Bot Rehan', shortName: 'Rehan' },
+  E: { name: 'Meera', shortName: 'Meera' },
+  F: { name: 'Rohan', shortName: 'Rohan' },
 };
 
 /**
  * Generates the initial 6 seats (A, B, C, D, E, F) around the table in anti-clockwise order.
+ * Uses authentic Indian card game names for bots and the authenticated user name for human.
  * Each seat starts with INITIAL_SEAT_COINS (1,000 RC) -> Total Table Pool = 6,000 RC constant.
  */
-export function createInitialSeats(humanSeat: SeatId = 'D'): SeatInfo[] {
+export function createInitialSeats(humanSeat: SeatId = 'D', humanName?: string): SeatInfo[] {
   return SEAT_ORDER.map((id) => {
     const isHuman = id === humanSeat;
+    const displayName = isHuman ? (humanName?.trim() || 'You') : DEFAULT_SEAT_NAMES[id].name;
+    const shortName = isHuman ? (humanName?.trim() || 'You') : DEFAULT_SEAT_NAMES[id].shortName;
     return {
       id,
-      name: isHuman ? 'You' : DEFAULT_SEAT_NAMES[id].name,
-      shortName: isHuman ? 'You' : DEFAULT_SEAT_NAMES[id].shortName,
+      name: displayName,
+      shortName,
       isHuman,
       balance: INITIAL_SEAT_COINS,
       betAmount: 0,
       betSide: null,
+      betStatus: 'pending',
     };
   });
 }
@@ -73,7 +77,8 @@ export function createInitialSeats(humanSeat: SeatId = 'D'): SeatInfo[] {
  */
 export function prepareSeatsForNextRound(
   currentSeats: readonly SeatInfo[],
-  humanSeat: SeatId
+  humanSeat: SeatId,
+  humanName?: string
 ): SeatInfo[] {
   const balances: Record<SeatId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 };
   for (const s of currentSeats) {
@@ -97,14 +102,18 @@ export function prepareSeatsForNextRound(
 
   return SEAT_ORDER.map((id) => {
     const isHuman = id === humanSeat;
+    const prevSeat = currentSeats.find((s) => s.id === id);
+    const displayName = isHuman ? (humanName?.trim() || prevSeat?.name || 'You') : DEFAULT_SEAT_NAMES[id].name;
+    const shortName = isHuman ? (humanName?.trim() || prevSeat?.shortName || 'You') : DEFAULT_SEAT_NAMES[id].shortName;
     return {
       id,
-      name: isHuman ? 'You' : DEFAULT_SEAT_NAMES[id].name,
-      shortName: isHuman ? 'You' : DEFAULT_SEAT_NAMES[id].shortName,
+      name: displayName,
+      shortName,
       isHuman,
       balance: balances[id],
       betAmount: 0,
       betSide: null,
+      betStatus: 'pending',
     };
   });
 }
@@ -259,19 +268,171 @@ export function resolveNextDealerAndCutter(
 }
 
 /**
- * Rule 3: After the Cutter cuts the deck, bets are placed in anti-clockwise order
- * starting from the Cutter, across all non-dealer players.
+ * Rule 3: Step-by-Step Betting Order:
+ * Step 1: Cutter cuts
+ * Step 2: Cutter bets first (locked to Blue / Bahar)
+ * Step 3: Shuffler bets second (locked to Red / Andar)
+ * Step 4: Other players bet on whichever side (Red or Blue) or choose to Skip
  */
-export function getBettingOrder(dealerSeat: SeatId, cutterSeat: SeatId): SeatId[] {
-  const order: SeatId[] = [];
-  let cursor: SeatId = cutterSeat;
+export function getStepByStepBettingOrder(dealerSeat: SeatId, cutterSeat: SeatId): SeatId[] {
+  const order: SeatId[] = [cutterSeat, dealerSeat];
+  let cursor = getNextAntiClockwiseSeat(cutterSeat);
   for (let i = 0; i < SEAT_ORDER.length; i++) {
-    if (cursor !== dealerSeat) {
+    if (cursor !== cutterSeat && cursor !== dealerSeat) {
       order.push(cursor);
     }
     cursor = getNextAntiClockwiseSeat(cursor);
   }
   return order;
+}
+
+export function getBettingOrder(dealerSeat: SeatId, cutterSeat: SeatId): SeatId[] {
+  return getStepByStepBettingOrder(dealerSeat, cutterSeat);
+}
+
+export interface PoolTotals {
+  redTotal: number;
+  blueTotal: number;
+  difference: number;
+  isBalanced: boolean;
+}
+
+/**
+ * Calculates total wagers on Red (Shuffler/Dealer) vs Blue (Cutter/Player).
+ * Players who skipped or have 0 bet are excluded.
+ */
+export function calculatePoolTotals(seats: readonly SeatInfo[]): PoolTotals {
+  let redTotal = 0;
+  let blueTotal = 0;
+  if (!Array.isArray(seats)) {
+    return { redTotal: 0, blueTotal: 0, difference: 0, isBalanced: false };
+  }
+  for (const s of seats) {
+    if (s && typeof s.betAmount === 'number' && s.betAmount > 0 && s.betSide && s.betStatus !== 'skipped') {
+      if (s.betSide === 'dealer') {
+        redTotal += s.betAmount;
+      } else if (s.betSide === 'player') {
+        blueTotal += s.betAmount;
+      }
+    }
+  }
+  const difference = Math.abs(redTotal - blueTotal);
+  const isBalanced = redTotal > 0 && redTotal === blueTotal;
+  return { redTotal, blueTotal, difference, isBalanced };
+}
+
+export function isPoolBalanced(seats: readonly SeatInfo[]): boolean {
+  return calculatePoolTotals(seats).isBalanced;
+}
+
+/**
+ * Balances the pool across bot seats so redTotal === blueTotal,
+ * allowing the card deal to commence.
+ */
+export function balancePools(seats: readonly SeatInfo[]): SeatInfo[] {
+  const totals = calculatePoolTotals(seats);
+  if (totals.isBalanced) return [...seats];
+
+  const diff = totals.redTotal - totals.blueTotal;
+  if (diff === 0 && totals.redTotal > 0) return [...seats];
+
+  const result = seats.map((s) => ({ ...s }));
+
+  if (diff > 0) {
+    // Red > Blue: need Blue to increase by diff
+    const blueBot = result.find((s) => !s.isHuman && s.betSide === 'player');
+    if (blueBot && blueBot.balance >= blueBot.betAmount + diff) {
+      blueBot.betAmount += diff;
+      blueBot.betStatus = 'placed';
+      return result;
+    }
+    const skippedBot = result.find(
+      (s) => !s.isHuman && (s.betStatus === 'skipped' || s.betAmount === 0 || !s.betSide)
+    );
+    if (skippedBot && skippedBot.balance >= diff) {
+      skippedBot.betSide = 'player';
+      skippedBot.betAmount = diff;
+      skippedBot.betStatus = 'placed';
+      return result;
+    }
+    const redBot = result.find(
+      (s) => !s.isHuman && s.betSide === 'dealer' && s.betAmount > diff
+    );
+    if (redBot) {
+      redBot.betAmount -= diff;
+      return result;
+    }
+  } else if (diff < 0) {
+    // Blue > Red: need Red to increase by |diff|
+    const absDiff = Math.abs(diff);
+    const redBot = result.find((s) => !s.isHuman && s.betSide === 'dealer');
+    if (redBot && redBot.balance >= redBot.betAmount + absDiff) {
+      redBot.betAmount += absDiff;
+      redBot.betStatus = 'placed';
+      return result;
+    }
+    const skippedBot = result.find(
+      (s) => !s.isHuman && (s.betStatus === 'skipped' || s.betAmount === 0 || !s.betSide)
+    );
+    if (skippedBot && skippedBot.balance >= absDiff) {
+      skippedBot.betSide = 'dealer';
+      skippedBot.betAmount = absDiff;
+      skippedBot.betStatus = 'placed';
+      return result;
+    }
+    const blueBot = result.find(
+      (s) => !s.isHuman && s.betSide === 'player' && s.betAmount > absDiff
+    );
+    if (blueBot) {
+      blueBot.betAmount -= absDiff;
+      return result;
+    }
+  } else if (totals.redTotal === 0 && totals.blueTotal === 0) {
+    // Both zero, give initial default bets
+    const dealerSeat = result.find((s) => s.id === 'A') || result[0];
+    const cutterSeat = result.find((s) => s.id === 'B') || result[1];
+    dealerSeat.betSide = 'dealer';
+    dealerSeat.betAmount = 100;
+    dealerSeat.betStatus = 'placed';
+    cutterSeat.betSide = 'player';
+    cutterSeat.betAmount = 100;
+    cutterSeat.betStatus = 'placed';
+  }
+
+  return result;
+}
+
+/**
+ * Balanced Round Settlement:
+ * Because Red Total === Blue Total, winners win 1:1 against the opposite side.
+ * Skipped players lose nothing and gain nothing (delta = 0).
+ * Table pool sum remains 100% constant (6,000 RC).
+ */
+export function settleBalancedRound(
+  seats: readonly SeatInfo[],
+  winningSide: Side
+): {
+  updatedSeats: SeatInfo[];
+  deltas: Record<SeatId, number>;
+  totalPool: number;
+} {
+  const deltas: Record<SeatId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 };
+  const updatedSeats = seats.map((s) => {
+    if (!s.betSide || s.betAmount <= 0 || s.betStatus === 'skipped') {
+      deltas[s.id] = 0;
+      return { ...s };
+    }
+    const won = s.betSide === winningSide;
+    const delta = won ? s.betAmount : -s.betAmount;
+    deltas[s.id] = delta;
+    return {
+      ...s,
+      balance: Math.max(0, s.balance + delta),
+    };
+  });
+
+  const totalPool = updatedSeats.reduce((acc, s) => acc + s.balance, 0);
+  return { updatedSeats, deltas, totalPool };
 }
 
 /**
@@ -325,13 +486,21 @@ export function shuffleDeck(
  * Extracts the bottom card of the 2nd deck (`secondHalf.pop()`) as the target Point Card (Hukam).
  */
 export function splitDeck(deck: readonly Card[], cutIndex: number): SplitResult {
-  if (deck.length < 3) {
-    throw new Error('Deck must have at least 3 cards to split and reveal a point card.');
-  }
-  const safeCut = Math.max(1, Math.min(deck.length - 2, Math.floor(cutIndex)));
-  const firstDeck = deck.slice(0, safeCut);
-  const secondDeck = deck.slice(safeCut);
-  const pointCard = secondDeck.pop()!;
+  const activeDeck =
+    Array.isArray(deck) && deck.length >= 3 ? [...deck] : shuffleDeck(createStandardDeck());
+  const numCut = typeof cutIndex === 'number' && !isNaN(cutIndex) ? cutIndex : Number(cutIndex) || 26;
+  const safeCut = Math.max(1, Math.min(activeDeck.length - 2, Math.floor(numCut)));
+  const firstDeck = activeDeck.slice(0, safeCut);
+  const secondDeck = activeDeck.slice(safeCut);
+  const pointCard =
+    secondDeck.pop() ||
+    activeDeck[0] || {
+      id: 'A_spades',
+      suit: 'spades',
+      rank: 'A',
+      isRed: false,
+      label: 'A♠',
+    };
 
   return {
     firstDeck,

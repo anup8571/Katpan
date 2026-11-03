@@ -1,99 +1,90 @@
-# Clean Professional Login & Register UI + Reliable Player ID & Verification System
+# Implementation Plan - In-Game Header Cleanup, Table Glow Lights & Balanced Betting System
 
-This plan replaces the cluttered 4-tab technical modal with a sleek, minimal **2-tab (`Login` & `Register`)** interface—with **Forgot Password?** inside the Login view and a clean **6-digit Verification** step right after Register—while fixing the backend and Vercel API layer so every action works reliably across all environments.
+This plan details the implementation of a streamlined game header, realistic player names, 3D table glowing seat indicators (Red for Shuffler, Blue for Cutter, Yellow for other players transitioning to their bet choice), and a balanced two-sided betting workflow where dealing cannot start until Red and Blue sides match.
 
-## User Review & Critical Decisions
-
+### User Review Required
 > [!IMPORTANT]
-> **Confirmed User Choices from Phase 1:**
-> - **Top Navigation**: Only **2 clean tabs** (`Login` and `Register`), with **`Forgot Password?`** inside the Login page and **zero** technical RLS/scrypt status boxes cluttering the modal.
-> - **Player ID Creation**: **Auto-generate a unique Player ID on Register and allow custom username** (e.g., player enters their username/name like `Vikram` and receives a unique Player ID such as `vikram_4821` / `RK-4821`, and can log in using their **Player ID**, **Username**, or **Email**).
-> - **Verification Flow**: **Show a clean 6-digit verification step right after clicking Register** (instead of a separate top tab), and immediately sign the player in once verified.
+> - **Header Items Confirmed**: As requested, only RC Balance, Hukam card, Profile button, and Settings button will remain in the top header. The redundant seat tabs (A–F) and repetitive pills will be removed.
+> - **Bet Balancing Mechanism**: Dealing is locked until total bets on Red (Shuffler's side) and Blue (Cutter's side) are strictly equal (`redTotal === blueTotal`). An interactive Pool Balance Bar with live difference indicators and quick-adjust (+ / - / Match) controls will allow players and bots to balance the pool.
+> - **Skip Bet Option**: Other players can opt to "Skip Bet", which keeps their seat light glowing Yellow while others who bet switch to Red or Blue.
 
 ---
 
-## 1. Overview & Core Concept
+### Proposed Changes
 
-- **What It Does**: Provides a streamlined, attractive casino account experience where players can **Login** (with Player ID, Username, or Email + Password), **Register** (with automatic Player ID generation and a clean 6-digit verification step), and **Reset Password** (directly from the Login screen) with 100% reliability on both Cloud Run and Vercel (`kat-pan.vercel.app`).
-- **Target Audience / Persona**: Players on mobile and desktop browsers who want a fast, modern, distraction-free login and registration modal.
-- **Key Value**: Removes all technical jargon and extra tabs from the UI while eliminating serverless cold-start and static-host failures so registration, 6-digit verification, login, and password reset work every time.
+#### 1. Real Player Names & Game Rules (`src/game/types.ts`, `src/game/rules.ts`)
+- Replace generic "Player A", "Player B", etc. with realistic player names:
+  - Human user's seat uses their authenticated profile name (`displayName` / `username`, e.g., "Anup").
+  - Bot seats receive distinguished, authentic names (e.g., "Vikram", "Kabir", "Aarav", "Meera", "Rohan").
+- Extend player seat state with:
+  - `side`: `'red'` | `'blue'` | `'none'`
+  - `betStatus`: `'pending'` | `'placed'` | `'skipped'`
+- Update the phased betting workflow state machine:
+  1. `shuffling` (Shuffler shuffles)
+  2. `cutting` (Cutter cuts & reveals Hukam)
+  3. `betting_cutter` (Cutter places initial Blue bet)
+  4. `betting_shuffler` (Shuffler places initial Red bet)
+  5. `betting_players` (Other players bet on Red, Blue, or Skip)
+  6. `balancing` (System checks `redTotal === blueTotal`; if unequal, prompts adjustments; if equal, allows `dealing`)
+  7. `dealing` (Cards dealt to Andar/Bahar)
+  8. `round_over`
+
+#### 2. 3D Table Seat Glowing Lights (`src/3d/CasinoScene.ts`)
+- Add dynamic glowing halo rings and point light accents under each player seat marker:
+  - **Shuffler**: Vibrant glowing Red (`#ef4444`)
+  - **Cutter**: Vibrant glowing Blue (`#3b82f6`)
+  - **Other Players**: Warm glowing Yellow (`#eab308`)
+  - **Bet Reaction**: When any player places a bet on Red, their table halo changes to Red; when placed on Blue, halo changes to Blue; if they skip, halo stays Yellow.
+- Render actual player names (instead of letters A–F) on 3D seat placards/canvases.
+
+#### 3. In-Game Header Streamlining (`src/components/HUD.tsx`)
+- Remove cluttered elements:
+  - Remove center desktop seat selector tabs (A, B, C, D, E, F).
+  - Remove redundant Under/Cutter mini pills (now clearly conveyed by 3D glowing lights and seat badges).
+- Retain only the essentials:
+  - **Left**: RC Balance & Room Code chip (if in multiplayer).
+  - **Center**: Current Hukam Point Card.
+  - **Right**: Profile Button (opens profile modal) & Settings Button (opens audio/game settings).
+
+#### 4. Balanced Pool Display & Controls (`src/components/ControlDock.tsx`, `src/components/BettingDock.tsx`)
+- Implement a dedicated **Two-Sided Pool Tracker**:
+  - Live **Red Side (Shuffler)** total vs **Blue Side (Cutter)** total with distinct visual gauges.
+  - Status banner: "Balanced (X RC each) - Ready to Deal!" vs "Unbalanced (Difference: Y RC) - Adjust bets to match".
+- Add sequential turn prompt:
+  - Step indicator showing whose turn it is (Cutter -> Shuffler -> Table Players -> Pool Balancing).
+  - Betting options: "Bet Red", "Bet Blue", "Skip Bet", and "+/-" adjustment buttons during balancing.
+  - Bots automatically make realistic wagers and assist in balancing the remaining difference so games flow smoothly.
+
+#### 5. Main Coordination (`src/App.tsx`)
+- Integrate user profile state directly into active seat naming.
+- Connect the new phased flow to the 3D scene lights and deal triggers.
+- Ensure audio and visual cues celebrate balanced pools and phase changes.
 
 ---
 
-## 2. User Experience & Visual Design
+### Verification Plan
 
-- **Key User Flows**:
-  1. **Login View (Default Tab)**:
-     - Clean 2-pill switcher at the top: **`Login`** | **`Register`**.
-     - Inputs: **Email or Player ID** and **Password**.
-     - Inline **`Forgot Password?`** link right above the password input.
-     - Single primary gold button: **`Sign In`**.
-  2. **Register -> 6-Digit Verification Step**:
-     - Inputs: **Username / Player Name**, **Email Address**, and **Password** (plus optional seat choice `A`–`F`).
-     - Clicking **`Create Account`** auto-generates the player's unique **Player ID** and smoothly transitions the card to a clean **Verify Your Account** step showing their assigned **Player ID**, the **6-digit verification code**, and a **`Verify & Sign In`** button (with a `Back` / `Resend Code` link).
-  3. **Forgot Password Step (Inside Login)**:
-     - Clicking **`Forgot Password?`** inside Login switches to a clean 2-step recovery view: enter **Email or Player ID** -> enter the **6-digit Reset Code** + **New Password** -> **`Update Password & Sign In`** (with a `Back to Login` button).
-  4. **Signed-In Profile View**:
-     - Displays the player's **Display Name**, copyable **Player ID (`ID: RK-...`)**, **Email**, **Verified** badge, **Royal Coins Balance**, **Wins / Hands**, and **Sign Out** button.
-- **Visual Identity & Theme Preservation**:
-  - Clean dark glass surface (`bg-slate-950/85 backdrop-blur-xl border border-white/10`), warm gold primary CTA (`#f59e0b`), crisp typography, and **zero** database/cryptography telemetry boxes at the bottom of the modal.
+#### Automated Tests
+- Run `npm run lint` / `tsc --noEmit` to verify type safety and build integrity.
+- Run `compile_applet` to ensure Vite production bundle builds without errors.
 
----
-
-## 3. Key Product Decisions & Trade-Offs
-
-- **Decision 1: 2-Tab Architecture (`Login` | `Register`) with Contextual Sub-Steps**
-  - *Chosen Approach*: Keep only `Login` and `Register` in the top segmented control. Render `Verify Account` as step 2 of `Register` (or when an unverified account logs in), and render `Forgot Password` as a sub-view of `Login`.
-  - *Why*: Matches standard, high-converting authentication UX and directly resolves the cramped 4-tab layout shown in your screenshot.
-- **Decision 2: Self-Contained Vercel API + Signed Pending Verification Token + Resilient Client**
-  - *Chosen Approach*:
-    1. Make `/api/index.ts` 100% self-contained (no relative imports to `../src/...` that fail Vercel's serverless bundler).
-    2. Include a signed `verificationToken` in the `/api/auth/register` and `/api/auth/forgot-password` responses so `/api/auth/verify-email` and `/api/auth/reset-password` can cryptographically verify the 6-digit code and account details even across stateless Vercel serverless cold-starts.
-    3. Keep dual-sync in `src/utils/apiClient.ts` so if a static deployment cannot reach the Express backend, the exact same Player ID, 6-digit verification, login, and password reset logic executes seamlessly without throwing network errors.
-  - *Why*: Guarantees that clicking Register, Verify, Login, or Reset Password never fails on `kat-pan.vercel.app`, mobile browsers, or AI Studio preview.
-
----
-
-## 4. Technical Architecture & Data Strategy *(Technical Reference)*
-
-- **Authentication & Verification Flow Diagram**:
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    Clean 2-Tab Auth Modal (Login | Register)            │
-└───────────────────┬─────────────────────────────────┬───────────────────┘
-                    │                                 │
-               [Login Tab]                      [Register Tab]
-                    │                                 │
-      ┌─────────────┴─────────────┐                   ▼
-      ▼                           ▼         ┌───────────────────────────┐
-┌───────────────┐       ┌──────────────────┐│ 1. Enter Username, Email, │
-│ Enter Email   │       │ Forgot Password? ││    & Password             │
-│ or Player ID  │       │ • Get 6-digit    ││ 2. Auto-generate Player ID│
-│ + Password    │       │   code & set new │└─────────────┬─────────────┘
-└───────┬───────┘       │   password       │              │
-        │               └─────────┬────────┘              ▼
-        │                         │         ┌───────────────────────────┐
-        │                         │         │ 6-Digit Verification Step │
-        │                         │         │ • Confirm 6-digit code    │
-        └─────────────────────────┴─────────┤ • Activate Player ID      │
-                                            └─────────────┬─────────────┘
-                                                          │
-                                                          ▼
-                                            ┌───────────────────────────┐
-                                            │  Signed-In Player Profile │
-                                            │  (Player ID + 1,000 RC)   │
-                                            └───────────────────────────┘
-```
-
-- **Planned File Changes**:
-  - `src/components/AuthProfileModal.tsx`:
-    - Redesign into a clean, professional 2-tab (`Login` | `Register`) modal.
-    - Remove the bottom green PostgreSQL RLS/Scrypt technical box and verbose headers.
-    - Embed `Forgot Password?` inside the `Login` view and `6-Digit Verification` as the immediate step after `Register`.
-  - `server.ts` & `api/index.ts`:
-    - Auto-generate a clean, memorable **Player ID** (e.g. `rk_vikram_482` or custom username) on registration.
-    - Return a signed `verificationToken` alongside the 6-digit code so verification and password reset succeed across stateless serverless instances as well as Cloud SQL PostgreSQL.
-    - Make `api/index.ts` completely self-contained with zero external relative imports.
-  - `src/utils/apiClient.ts`:
-    - Ensure `/api/auth/*` calls work reliably against the server and gracefully handle static-host environments without ever failing.
+#### Manual Verification
+1. **Header Verification**:
+   - Inspect top header: Confirm only RC Balance, Hukam card, Profile button, and Settings button are visible.
+   - Click Profile button -> verify ProfileModal opens.
+   - Click Settings button -> verify SettingsModal opens.
+2. **Player Names Verification**:
+   - Check table: Confirm real human name ("Anup") appears on user's seat, and names like Vikram, Kabir, Aarav appear on bot seats (no generic "Player A/B/C/D").
+3. **Table Glow Lights Verification**:
+   - Verify Shuffler seat has glowing Red light.
+   - Verify Cutter seat has glowing Blue light.
+   - Verify other seats have glowing Yellow lights.
+   - Have a player bet Red -> confirm indicator switches to Red.
+   - Have a player bet Blue -> confirm indicator switches to Blue.
+   - Have a player click "Skip Bet" -> confirm indicator remains Yellow.
+4. **Betting & Dealing Workflow**:
+   - Confirm Shuffler shuffles first, then Cutter cuts.
+   - Confirm Cutter bets first, followed by Shuffler.
+   - Confirm Red & Blue totals appear clearly on screen.
+   - Confirm dealing button is disabled when `redTotal !== blueTotal`.
+   - Adjust bets until `redTotal === blueTotal` -> confirm dealing unlocks and round proceeds smoothly.

@@ -78,132 +78,30 @@ export const HUD: React.FC<HUDProps> = ({
 
   return (
     <div className="fixed inset-x-0 top-0 pointer-events-none z-20 flex flex-col p-2.5 sm:p-4 select-none">
-      {/* Sleek Transparent Floating Top Row — No heavy header box */}
-      <div className="flex items-center justify-between gap-2 max-w-6xl mx-auto w-full">
-        {/* Left Floating Glass Capsule: Brand + Active Roles + Hukam */}
-        <div className="pointer-events-auto flex items-center gap-2 bg-slate-950/35 backdrop-blur-md border border-white/15 rounded-2xl px-3 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.45)]">
-          <div className="flex items-center gap-1.5 pr-2 border-r border-white/10">
-            <Crown className="w-4 h-4 text-amber-400 shrink-0" />
-            <span className="text-xs sm:text-sm font-black tracking-wider text-white whitespace-nowrap">
-              ROYAL KATTI
-            </span>
-          </div>
-
-          {/* Live Under & Cutter Role Pills */}
-          <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-bold">
-            <span
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
-                dealerIsYou
-                  ? 'bg-amber-500/25 border-amber-400/60 text-amber-200'
-                  : 'bg-white/5 border-white/10 text-amber-300/90'
-              }`}
-              title="Under (Shuffler / Dealer)"
-            >
-              <Crown className="w-3 h-3 text-amber-400" />
-              <span>Under: {dealerSeat}</span>
-            </span>
-
-            <span
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
-                cutterIsYou
-                  ? 'bg-sky-500/25 border-sky-400/60 text-sky-200'
-                  : 'bg-white/5 border-white/10 text-sky-300/90'
-              }`}
-              title="Bahar (Cutter)"
-            >
-              <Scissors className="w-3 h-3 text-sky-400" />
-              <span>Cutter: {cutterSeat}</span>
-            </span>
-
-            {pointCard && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-400/50 text-amber-200 font-black">
-                <span>Hukam:</span>
-                <span className={isRedPoint ? 'text-rose-400' : 'text-white'}>
-                  {pointCard.label}
-                </span>
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Center Compact Transparent Seat Switcher (Desktop) */}
-        <div className="hidden lg:flex pointer-events-auto items-center gap-1 bg-slate-950/30 backdrop-blur-md border border-white/10 rounded-2xl px-2 py-1 shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
-          {seats.map((seat) => {
-            const isD = seat.id === dealerSeat;
-            const isC = seat.id === cutterSeat;
-            const isH = seat.id === humanSeat;
-            const isActing = seat.id === activeActorSeat;
-            const remotePlayer = occupiedSeats[seat.id];
-
-            return (
-              <button
-                key={seat.id}
-                onClick={() => onSelectHumanSeat(seat.id)}
-                title={`Seat ${seat.id} • ${seat.balance} RC${remotePlayer ? ` • ${remotePlayer}` : ''}`}
-                className={`relative px-2 py-1 rounded-xl text-[10px] font-black transition-all cursor-pointer flex items-center gap-1 border ${
-                  isH
-                    ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-200'
-                    : isD
-                      ? 'bg-amber-500/20 border-amber-400/40 text-amber-200'
-                      : isC
-                        ? 'bg-sky-500/20 border-sky-400/40 text-sky-200'
-                        : 'bg-white/5 border-transparent text-slate-300 hover:bg-white/10'
-                } ${isActing ? 'ring-1 ring-amber-400' : ''}`}
-              >
-                <span>{seat.id}</span>
-                {isD && <span className="text-[9px]">👑</span>}
-                {isC && <span className="text-[9px]">✂️</span>}
-                {remotePlayer && !isH && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Right Floating Glass Capsule: Balance + Multiplayer/Invite + Profile + Settings */}
+      {/* Sleek, Clean Floating Top Row — Only essentials: RC Balance, Hukam card, Profile, Settings */}
+      <div className="flex items-center justify-between gap-2 max-w-5xl mx-auto w-full">
+        {/* Left: RC Balance Pill (+ optional room code badge if in multiplayer room) */}
         <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
-          {/* RC Balance Pill */}
           <div
             data-testid="balance-display"
-            className="flex items-center gap-1.5 bg-slate-950/35 backdrop-blur-md border border-emerald-400/30 rounded-2xl px-3 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.45)]"
+            className="flex items-center gap-2 bg-slate-950/70 backdrop-blur-md border border-emerald-400/40 rounded-2xl px-3.5 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.55)]"
           >
-            <Coins className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span className="text-xs sm:text-sm font-black text-emerald-300 tabular-nums whitespace-nowrap">
+            <Coins className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="text-xs sm:text-sm font-black text-emerald-300 tabular-nums whitespace-nowrap tracking-wide">
               {balance.toLocaleString()} RC
             </span>
           </div>
 
-          {/* Multiplayer Lobby & Quick Copy Room Code Button */}
-          <div className="flex items-center gap-1">
-            <button
-              data-testid="multiplayer-btn"
-              onClick={onOpenMultiplayer}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-2xl backdrop-blur-md border transition-all cursor-pointer shadow-[0_8px_32px_rgba(0,0,0,0.45)] ${
-                activeRoomCode
-                  ? 'bg-sky-500/25 border-sky-400/50 text-sky-200 hover:bg-sky-500/35'
-                  : 'bg-slate-950/35 border-white/15 text-slate-200 hover:bg-white/10 hover:border-white/25'
-              }`}
-              title="Multiplayer Rooms & Invite Players via Room Code"
-            >
-              {activeRoomCode ? (
-                <Wifi className="w-3.5 h-3.5 text-sky-400 animate-pulse" />
-              ) : (
-                <Users className="w-3.5 h-3.5 text-sky-400" />
-              )}
-              <span className="hidden sm:inline text-xs font-bold tracking-wide">
-                {activeRoomCode
-                  ? `${activeRoomCode} (${roomPlayerCount})`
-                  : 'Invite / Rooms'}
+          {activeRoomCode && (
+            <div className="flex items-center gap-1 bg-slate-950/70 backdrop-blur-md border border-sky-400/40 rounded-2xl px-2.5 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.55)]">
+              <span className="text-[10px] sm:text-xs font-mono font-bold text-sky-200">
+                {activeRoomCode}
               </span>
-            </button>
-
-            {activeRoomCode && (
               <button
                 type="button"
                 onClick={handleQuickCopyCode}
-                title={`Copy Room Code ${activeRoomCode} to invite friends`}
-                className="p-2 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 backdrop-blur-md border border-amber-400/40 text-amber-300 transition-all cursor-pointer shadow-[0_8px_32px_rgba(0,0,0,0.45)]"
+                title={`Copy Room Code ${activeRoomCode}`}
+                className="p-1 rounded-lg text-sky-300 hover:text-white cursor-pointer"
               >
                 {copiedRoomCode ? (
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -211,37 +109,51 @@ export const HUD: React.FC<HUDProps> = ({
                   <Copy className="w-3.5 h-3.5" />
                 )}
               </button>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
 
-          {/* Profile / Auth Button */}
+        {/* Center: Hukam Card Pill */}
+        {pointCard && (
+          <div className="pointer-events-auto flex items-center gap-2 bg-slate-950/80 backdrop-blur-md border border-amber-400/60 rounded-2xl px-4 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.55)] animate-fadeIn">
+            <span className="text-xs font-black uppercase tracking-wider text-amber-200">
+              Hukam:
+            </span>
+            <span
+              className={`text-sm sm:text-base font-black ${
+                isRedPoint ? 'text-rose-400' : 'text-white'
+              }`}
+            >
+              {pointCard.label}
+            </span>
+          </div>
+        )}
+
+        {/* Right: Profile Button & Settings Button */}
+        <div className="pointer-events-auto flex items-center gap-2">
+          {/* Profile Button */}
           <button
             data-testid="profile-btn"
             onClick={onOpenProfile}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-2xl backdrop-blur-md border transition-all cursor-pointer shadow-[0_8px_32px_rgba(0,0,0,0.45)] ${
-              isAuthenticated
-                ? 'bg-amber-500/20 border-amber-400/40 text-amber-200 hover:bg-amber-500/30'
-                : 'bg-slate-950/35 border-white/15 text-slate-200 hover:bg-white/10 hover:border-white/25'
-            }`}
-            title="Player Profile & Email Account"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-slate-950/70 hover:bg-slate-900/90 backdrop-blur-md border border-amber-400/40 text-amber-200 transition-all cursor-pointer shadow-[0_8px_32px_rgba(0,0,0,0.55)]"
+            title="Access Profile & Account"
+            aria-label="Profile"
           >
-            <User className="w-3.5 h-3.5 text-amber-400" />
-            <span className="hidden sm:inline text-xs font-bold tracking-wide max-w-[96px] truncate">
+            <User className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="text-xs sm:text-sm font-bold tracking-wide max-w-[120px] truncate">
               {isAuthenticated && userDisplayName ? userDisplayName : 'Profile'}
             </span>
           </button>
-
-          <PWAInstallButton compact />
 
           {/* Settings Button */}
           <button
             data-testid="settings-btn"
             onClick={onOpenSettings}
-            className="p-2 rounded-2xl bg-slate-950/35 backdrop-blur-md border border-white/15 text-slate-200 hover:bg-white/10 hover:border-white/25 transition-all cursor-pointer shadow-[0_8px_32px_rgba(0,0,0,0.45)]"
-            title="Table Settings & Camera"
+            className="p-2.5 rounded-2xl bg-slate-950/70 hover:bg-slate-900/90 backdrop-blur-md border border-white/20 text-slate-200 hover:text-white transition-all cursor-pointer shadow-[0_8px_32px_rgba(0,0,0,0.55)]"
+            title="Settings & Audio"
             aria-label="Settings"
           >
-            <Settings className="w-4 h-4 text-slate-200" />
+            <Settings className="w-4 h-4" />
           </button>
         </div>
       </div>

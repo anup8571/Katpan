@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan to redesign the Auth Modal into a clean, professional 2-tab (Login & Register) interface with inline Forgot Password and post-registration 6-digit verification, and fix backend/Vercel API reliability so Registration, Verification, Player ID Login, and Password Reset work seamlessly everywhere.",
-  "updatedAt": "2026-11-03T12:48:47.896087610Z",
+  "summary": "Implementation plan for in-game header cleanup, realistic player names, table glowing role/bet lights, and balanced two-sided betting workflow (Shuffler Red vs Cutter Blue).",
+  "updatedAt": "2026-11-03T18:47:53.446200912Z",
   "requestFeedback": true,
   "userFacing": true
 }
