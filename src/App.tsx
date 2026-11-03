@@ -33,6 +33,7 @@ import {
 } from './game/rules';
 import { decideBotInitialBet, decideNextBotEqualizeAction } from './game/botAI';
 import { soundEngine } from './game/audio';
+import { haptics } from './game/haptics';
 import { TitleScreen } from './components/TitleScreen';
 import { HUD } from './components/HUD';
 import { ControlDock } from './components/ControlDock';
@@ -67,7 +68,8 @@ export default function App() {
   // Game Phase & Shell state
   const [phase, setPhase] = useState<GamePhase>('title');
   const [cameraView, setCameraView] = useState<CameraView>('felt');
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(() => soundEngine.isMuted());
+  const [volume, setVolume] = useState(() => soundEngine.getVolume());
   const [botFastMode, setBotFastMode] = useState(false);
 
   // Transparent Modals State
@@ -587,6 +589,7 @@ export default function App() {
         }
 
         soundEngine.playCardFlick(1.08);
+        haptics.hapticCut();
         const { firstDeck: firstHalf, secondDeck: secondHalf, pointCard: revealedPoint } = splitDeck(
           mainDeckRef.current,
           safeCutIndex
@@ -1285,6 +1288,12 @@ export default function App() {
       setPlayerWonRound(humanWon);
       setHumanDelta(humanDeltaVal);
 
+      if (humanWon) {
+        haptics.hapticWin();
+      } else {
+        haptics.hapticDefeat();
+      }
+
       const newHumanBalance = humanObj ? humanObj.balance : INITIAL_SEAT_COINS;
       setBalance(newHumanBalance);
 
@@ -1426,6 +1435,17 @@ export default function App() {
   const handleSelectCamera = useCallback((view: CameraView) => {
     setCameraView(view);
     sceneRef.current?.setCameraView(view);
+  }, []);
+
+  const handleToggleMute = useCallback(() => {
+    const nextMuted = soundEngine.toggleMute();
+    setIsMuted(nextMuted);
+  }, []);
+
+  const handleVolumeChange = useCallback((newVol: number) => {
+    const clamped = soundEngine.setVolume(newVol);
+    setVolume(clamped);
+    setIsMuted(soundEngine.isMuted());
   }, []);
 
   // Keyboard shortcuts
@@ -1644,12 +1664,14 @@ export default function App() {
         onSendChat={handleSendChat}
       />
 
-      {/* Transparent Professional Settings Modal */}
+      {/* Royal Casino Themed Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         isMuted={isMuted}
-        onToggleMute={() => setIsMuted(soundEngine.toggleMute())}
+        onToggleMute={handleToggleMute}
+        volume={volume}
+        onVolumeChange={handleVolumeChange}
         botFastMode={botFastMode}
         onToggleBotFastMode={() => setBotFastMode((v) => !v)}
         cameraView={cameraView}

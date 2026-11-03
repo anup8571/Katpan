@@ -1,90 +1,55 @@
-# Implementation Plan - In-Game Header Cleanup, Table Glow Lights & Balanced Betting System
+# Implementation Summary - Royal Casino Settings Panel Redesign, 0-100% Volume Bar & Haptic Vibration Engine
 
-This plan details the implementation of a streamlined game header, realistic player names, 3D table glowing seat indicators (Red for Shuffler, Blue for Cutter, Yellow for other players transitioning to their bet choice), and a balanced two-sided betting workflow where dealing cannot start until Red and Blue sides match.
-
-### User Review Required
-> [!IMPORTANT]
-> - **Header Items Confirmed**: As requested, only RC Balance, Hukam card, Profile button, and Settings button will remain in the top header. The redundant seat tabs (A–F) and repetitive pills will be removed.
-> - **Bet Balancing Mechanism**: Dealing is locked until total bets on Red (Shuffler's side) and Blue (Cutter's side) are strictly equal (`redTotal === blueTotal`). An interactive Pool Balance Bar with live difference indicators and quick-adjust (+ / - / Match) controls will allow players and bots to balance the pool.
-> - **Skip Bet Option**: Other players can opt to "Skip Bet", which keeps their seat light glowing Yellow while others who bet switch to Red or Blue.
+The Settings Panel has been redesigned in the authentic royal Indian casino aesthetic (deep emerald velvet, obsidian glass, and gold filigree borders), equipped with a continuous 0–100% sound volume slider bar with live audio synthesis scaling, and a tactile haptic vibration feedback system using the Web Vibration API.
 
 ---
 
-### Proposed Changes
+### What Was Built & Redesigned
 
-#### 1. Real Player Names & Game Rules (`src/game/types.ts`, `src/game/rules.ts`)
-- Replace generic "Player A", "Player B", etc. with realistic player names:
-  - Human user's seat uses their authenticated profile name (`displayName` / `username`, e.g., "Anup").
-  - Bot seats receive distinguished, authentic names (e.g., "Vikram", "Kabir", "Aarav", "Meera", "Rohan").
-- Extend player seat state with:
-  - `side`: `'red'` | `'blue'` | `'none'`
-  - `betStatus`: `'pending'` | `'placed'` | `'skipped'`
-- Update the phased betting workflow state machine:
-  1. `shuffling` (Shuffler shuffles)
-  2. `cutting` (Cutter cuts & reveals Hukam)
-  3. `betting_cutter` (Cutter places initial Blue bet)
-  4. `betting_shuffler` (Shuffler places initial Red bet)
-  5. `betting_players` (Other players bet on Red, Blue, or Skip)
-  6. `balancing` (System checks `redTotal === blueTotal`; if unequal, prompts adjustments; if equal, allows `dealing`)
-  7. `dealing` (Cards dealt to Andar/Bahar)
-  8. `round_over`
+#### 1. Royal Casino Settings Panel (`src/components/SettingsModal.tsx`)
+- **Theme & Aesthetics**:
+  - Deep obsidian & imperial emerald backdrop with gold filigree border styling (`border-amber-500/35`).
+  - Ornate royal crown badges with animated golden sparkles.
+  - Distinct card-like setting modules for Sound Volume, Tactile Haptics, Bot Deal Speed, 3D Camera Angles, 6-Seat Selection, and Security Status.
+- **Sound Volume Control Bar (0–100%)**:
+  - Custom gradient slider bar from 0% to 100% (`#f59e0b` gold to `#10b981` emerald).
+  - Live numeric percentage badge with quick preset jump buttons (`Mute`, `25%`, `50%`, `75%`, `100%`).
+  - Mute/Unmute quick toggle button with dynamic speaker icons (`Volume2`, `Volume1`, `VolumeX`).
+  - Immediate audio feedback: Plays a crisp card flick or chip clink preview on release so the user can immediately test their volume level.
+- **Tactile Haptic Vibration Controls**:
+  - Master ON / OFF toggle switch with smooth animated pill slider.
+  - Three intensity modes: **Light (0.6x)**, **Medium (1.0x)**, and **Strong (1.4x)**.
+  - Interactive **"Test Vibration"** button that pulses the device's haptic motor with bouncing feedback.
+  - Real hardware status detection badge: Displays "Hardware Motor Active" on supported devices (Android Chrome, PWAs, mobile browsers) and graceful fallback notice.
+- **Preserved Core Settings**:
+  - 3D Camera Angles (`felt`, `player`, `pedestal`, `cinematic`).
+  - Bot Speed (`1x Normal` vs `2x Fast`).
+  - 6-Seat Table Switcher (`A` through `F`).
+  - Table security status and quick round reset / title screen actions.
 
-#### 2. 3D Table Seat Glowing Lights (`src/3d/CasinoScene.ts`)
-- Add dynamic glowing halo rings and point light accents under each player seat marker:
-  - **Shuffler**: Vibrant glowing Red (`#ef4444`)
-  - **Cutter**: Vibrant glowing Blue (`#3b82f6`)
-  - **Other Players**: Warm glowing Yellow (`#eab308`)
-  - **Bet Reaction**: When any player places a bet on Red, their table halo changes to Red; when placed on Blue, halo changes to Blue; if they skip, halo stays Yellow.
-- Render actual player names (instead of letters A–F) on 3D seat placards/canvases.
+#### 2. Sound Engine Master Gain Scaling (`src/game/audio.ts`)
+- Added `volume: number = 80` (0–100%) with `localStorage` persistence under `'royalkatti_sound_volume'`.
+- Added `getVolume()`, `setVolume(percent: number)`, and `getMasterVolume(): number`.
+- Scaled all synthesized procedural audio waveforms (`playCardFlick`, `playShuffleRiffle`, `playChipClick`, `playHukamChime`, `playWinFanfare`, `playLossSting`) by `(volume / 100)`. Setting volume to 0% auto-mutes the synthesizer.
 
-#### 3. In-Game Header Streamlining (`src/components/HUD.tsx`)
-- Remove cluttered elements:
-  - Remove center desktop seat selector tabs (A, B, C, D, E, F).
-  - Remove redundant Under/Cutter mini pills (now clearly conveyed by 3D glowing lights and seat badges).
-- Retain only the essentials:
-  - **Left**: RC Balance & Room Code chip (if in multiplayer).
-  - **Center**: Current Hukam Point Card.
-  - **Right**: Profile Button (opens profile modal) & Settings Button (opens audio/game settings).
-
-#### 4. Balanced Pool Display & Controls (`src/components/ControlDock.tsx`, `src/components/BettingDock.tsx`)
-- Implement a dedicated **Two-Sided Pool Tracker**:
-  - Live **Red Side (Shuffler)** total vs **Blue Side (Cutter)** total with distinct visual gauges.
-  - Status banner: "Balanced (X RC each) - Ready to Deal!" vs "Unbalanced (Difference: Y RC) - Adjust bets to match".
-- Add sequential turn prompt:
-  - Step indicator showing whose turn it is (Cutter -> Shuffler -> Table Players -> Pool Balancing).
-  - Betting options: "Bet Red", "Bet Blue", "Skip Bet", and "+/-" adjustment buttons during balancing.
-  - Bots automatically make realistic wagers and assist in balancing the remaining difference so games flow smoothly.
-
-#### 5. Main Coordination (`src/App.tsx`)
-- Integrate user profile state directly into active seat naming.
-- Connect the new phased flow to the 3D scene lights and deal triggers.
-- Ensure audio and visual cues celebrate balanced pools and phase changes.
+#### 3. Tactile Haptic Vibration Engine (`src/game/haptics.ts`)
+- Created full-featured `HapticsEngine` utilizing `navigator.vibrate`:
+  - `hapticTap()`: 15ms micro-pulse for UI buttons and tab switches.
+  - `hapticCardFlick()`: 25ms snappy pulse for card deals and cut position dragging.
+  - `hapticChip()`: Double-pulse `[20, 18, 20]` for chip betting and pool adjustments.
+  - `hapticCut()`: Solid `[45, 20, 25]` vibration on deck cut confirmation.
+  - `hapticWin()`: Royal celebratory fanfare rumble `[40, 30, 60, 35, 90, 40, 140]`.
+  - `hapticDefeat()`: Subdued dual-pulse `[60, 50, 90]` on dealer match.
+  - `testVibration()`: Interactive test routine for the settings panel.
+- Wired haptic triggers directly into `ControlDock.tsx` and `App.tsx` for cut, bet, equalize, deal, win, and lose moments.
 
 ---
 
-### Verification Plan
-
-#### Automated Tests
-- Run `npm run lint` / `tsc --noEmit` to verify type safety and build integrity.
-- Run `compile_applet` to ensure Vite production bundle builds without errors.
-
-#### Manual Verification
-1. **Header Verification**:
-   - Inspect top header: Confirm only RC Balance, Hukam card, Profile button, and Settings button are visible.
-   - Click Profile button -> verify ProfileModal opens.
-   - Click Settings button -> verify SettingsModal opens.
-2. **Player Names Verification**:
-   - Check table: Confirm real human name ("Anup") appears on user's seat, and names like Vikram, Kabir, Aarav appear on bot seats (no generic "Player A/B/C/D").
-3. **Table Glow Lights Verification**:
-   - Verify Shuffler seat has glowing Red light.
-   - Verify Cutter seat has glowing Blue light.
-   - Verify other seats have glowing Yellow lights.
-   - Have a player bet Red -> confirm indicator switches to Red.
-   - Have a player bet Blue -> confirm indicator switches to Blue.
-   - Have a player click "Skip Bet" -> confirm indicator remains Yellow.
-4. **Betting & Dealing Workflow**:
-   - Confirm Shuffler shuffles first, then Cutter cuts.
-   - Confirm Cutter bets first, followed by Shuffler.
-   - Confirm Red & Blue totals appear clearly on screen.
-   - Confirm dealing button is disabled when `redTotal !== blueTotal`.
-   - Adjust bets until `redTotal === blueTotal` -> confirm dealing unlocks and round proceeds smoothly.
+### Verification
+- **Automated Tests**:
+  - `npx tsx --test src/game/audio_haptics.test.ts` passed (volume clamping 0-100%, mute toggling, haptics state and intensity scaling).
+  - `npx tsx --test src/game/botAI.test.ts src/game/betting_workflow.test.ts` passed (all 9 bot AI and pool equalization tests passing).
+- **TypeScript & Build**:
+  - `tsc --noEmit` verified with 0 errors.
+  - `compile_applet` passed successfully.
+  - Dev server confirmed responding on `http://localhost:3000` with `HTTP/1.1 200 OK`.

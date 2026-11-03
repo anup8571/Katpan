@@ -15,6 +15,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { soundEngine } from '../game/audio';
+import { haptics } from '../game/haptics';
 
 interface ControlDockProps {
   phase: GamePhase;
@@ -179,7 +180,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
         {/* STEP 1: SHUFFLING (When YOU are the Shuffler / Under) */}
         {phase === 'shuffling' && isHumanDealer && (
           <button
-            onClick={onPlayerShuffle}
+            onClick={() => {
+              haptics.hapticCardFlick();
+              onPlayerShuffle();
+            }}
             disabled={isBusy}
             className="w-full py-3 px-4 rounded-xl font-black text-xs sm:text-sm text-slate-950 bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 hover:brightness-110 border border-yellow-200 shadow-[0_3px_0_#92400e] active:translate-y-0.5 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
           >
@@ -211,6 +215,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                 aria-label="Cut Position"
                 onChange={(e) => {
                   soundEngine.playCardFlick(1.2);
+                  haptics.hapticCardFlick();
                   const parsed = parseInt(e.target.value, 10);
                   if (!isNaN(parsed)) {
                     onChangeCutIndex(parsed);
@@ -221,7 +226,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
             </div>
 
             <button
-              onClick={() => onConfirmCut()}
+              onClick={() => {
+                haptics.hapticCut();
+                onConfirmCut();
+              }}
               disabled={isBusy}
               className="py-3 px-4 rounded-xl font-black text-xs text-slate-950 bg-gradient-to-r from-sky-300 via-cyan-300 to-sky-400 hover:brightness-110 border border-sky-100 shadow-[0_3px_0_#0369a1] active:translate-y-0.5 flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shrink-0"
             >
@@ -247,6 +255,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                       key={value}
                       onClick={() => {
                         soundEngine.playChipClick();
+                        haptics.hapticChip();
                         onSelectBet(value);
                       }}
                       style={{
@@ -267,6 +276,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                 <button
                   onClick={() => {
                     soundEngine.playChipClick();
+                    haptics.hapticTap();
                     onRandomizeBet();
                   }}
                   title="Pick Random Wager"
@@ -281,7 +291,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
             {/* CUTTER BETS FIRST: Locked to Blue / Cutter Side */}
             {isHumanCutter ? (
               <button
-                onClick={() => onPlaceHumanBet('player')}
+                onClick={() => {
+                  haptics.hapticChip();
+                  onPlaceHumanBet('player');
+                }}
                 className="w-full py-2.5 px-4 rounded-xl font-black text-xs sm:text-sm text-slate-950 bg-gradient-to-r from-sky-300 via-cyan-300 to-sky-400 hover:brightness-110 border border-sky-100 shadow-[0_3px_0_#0369a1] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
               >
                 <span className="flex items-center gap-1.5">
@@ -295,7 +308,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
             ) : isHumanDealer ? (
               /* SHUFFLER BETS SECOND: Locked to Red / Shuffler Side */
               <button
-                onClick={() => onPlaceHumanBet('dealer')}
+                onClick={() => {
+                  haptics.hapticChip();
+                  onPlaceHumanBet('dealer');
+                }}
                 className="w-full py-2.5 px-4 rounded-xl font-black text-xs sm:text-sm text-white bg-gradient-to-r from-rose-600 via-rose-500 to-pink-600 hover:brightness-110 border border-rose-300 shadow-[0_3px_0_#881337] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
               >
                 <span className="flex items-center gap-1.5">
@@ -310,7 +326,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
               /* OTHER TABLE PLAYERS: Bet Red, Bet Blue, or Skip Bet (stays Yellow) */
               <div className="grid grid-cols-3 gap-2">
                 <button
-                  onClick={() => onPlaceHumanBet('dealer')}
+                  onClick={() => {
+                    haptics.hapticChip();
+                    onPlaceHumanBet('dealer');
+                  }}
                   className="py-2 px-2 rounded-xl font-black text-xs text-white bg-gradient-to-r from-rose-600 to-pink-600 hover:brightness-110 border border-rose-300 shadow-[0_3px_0_#881337] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
                 >
                   <span className="flex items-center gap-1">
@@ -323,7 +342,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onPlaceHumanBet('player')}
+                  onClick={() => {
+                    haptics.hapticChip();
+                    onPlaceHumanBet('player');
+                  }}
                   className="py-2 px-2 rounded-xl font-black text-xs text-slate-950 bg-gradient-to-r from-sky-300 via-cyan-300 to-sky-400 hover:brightness-110 border border-sky-100 shadow-[0_3px_0_#0369a1] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
                 >
                   <span className="flex items-center gap-1">
@@ -336,7 +358,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onSkipHumanBet?.()}
+                  onClick={() => {
+                    haptics.hapticTap();
+                    onSkipHumanBet?.();
+                  }}
                   className="py-2 px-2 rounded-xl font-black text-xs text-yellow-300 bg-slate-900 hover:bg-slate-800 border border-yellow-400/50 shadow-[0_3px_0_#713f12] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
                   title="Skip this round — indicator remains yellow"
                 >
@@ -369,14 +394,20 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                     <span className="text-[11px] font-bold text-rose-300">Red:</span>
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => onAdjustBet?.('dealer', -50)}
+                        onClick={() => {
+                          haptics.hapticChip();
+                          onAdjustBet?.('dealer', -50);
+                        }}
                         className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-xs font-black cursor-pointer"
                         title="Decrease Red by 50 RC"
                       >
                         -50
                       </button>
                       <button
-                        onClick={() => onAdjustBet?.('dealer', +50)}
+                        onClick={() => {
+                          haptics.hapticChip();
+                          onAdjustBet?.('dealer', +50);
+                        }}
                         className="px-2 py-0.5 rounded bg-rose-500/30 hover:bg-rose-500/40 text-rose-200 text-xs font-black cursor-pointer"
                         title="Increase Red by 50 RC"
                       >
@@ -390,14 +421,20 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                     <span className="text-[11px] font-bold text-sky-300">Blue:</span>
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => onAdjustBet?.('player', -50)}
+                        onClick={() => {
+                          haptics.hapticChip();
+                          onAdjustBet?.('player', -50);
+                        }}
                         className="px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 text-xs font-black cursor-pointer"
                         title="Decrease Blue by 50 RC"
                       >
                         -50
                       </button>
                       <button
-                        onClick={() => onAdjustBet?.('player', +50)}
+                        onClick={() => {
+                          haptics.hapticChip();
+                          onAdjustBet?.('player', +50);
+                        }}
                         className="px-2 py-0.5 rounded bg-sky-500/30 hover:bg-sky-500/40 text-sky-200 text-xs font-black cursor-pointer"
                         title="Increase Blue by 50 RC"
                       >
@@ -409,7 +446,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
 
                 {/* Quick Match / Auto Balance Button */}
                 <button
-                  onClick={onQuickBalance}
+                  onClick={() => {
+                    haptics.hapticChip();
+                    onQuickBalance?.();
+                  }}
                   className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-400 hover:brightness-110 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all flex items-center justify-center gap-1.5"
                 >
                   <Scale className="w-3.5 h-3.5" />
@@ -429,7 +469,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
         {(phase === 'dealing' || (phase === 'balancing' && isBalanced)) && isHumanDealer && (
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={onDealOne}
+              onClick={() => {
+                haptics.hapticCardFlick();
+                onDealOne();
+              }}
               disabled={isBusy || isAutoDealing || !isBalanced}
               className="py-3 px-4 rounded-xl font-black text-xs sm:text-sm text-slate-950 bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 hover:brightness-110 active:translate-y-0.5 border border-yellow-200 shadow-[0_3px_0_#92400e] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
             >
@@ -438,7 +481,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
             </button>
 
             <button
-              onClick={onAutoDeal}
+              onClick={() => {
+                haptics.hapticTap();
+                onAutoDeal();
+              }}
               disabled={(isBusy && !isAutoDealing) || !isBalanced}
               className={`py-3 px-4 rounded-xl font-black text-xs sm:text-sm hover:brightness-110 border shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 isAutoDealing

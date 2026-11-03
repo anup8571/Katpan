@@ -6,9 +6,35 @@
 class SoundEngine {
   private ctx: AudioContext | null = null;
   private muted = false;
+  private volume = 80;
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedVol = localStorage.getItem('royalkatti_sound_volume');
+        if (savedVol !== null) {
+          const parsed = Number(savedVol);
+          if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+            this.volume = parsed;
+          }
+        }
+        const savedMute = localStorage.getItem('royalkatti_sound_muted');
+        if (savedMute !== null) {
+          this.muted = savedMute === 'true';
+        }
+      } catch {
+        // Safe fallback
+      }
+    }
+  }
+
+  private getMasterVolume(): number {
+    if (this.muted) return 0;
+    return Math.max(0, Math.min(1, this.volume / 100));
+  }
 
   private getContext(): AudioContext | null {
-    if (this.muted) return null;
+    if (this.muted || this.volume <= 0) return null;
     if (typeof window === 'undefined') return null;
 
     if (!this.ctx) {
@@ -31,17 +57,50 @@ class SoundEngine {
 
   public toggleMute(): boolean {
     this.muted = !this.muted;
+    try {
+      localStorage.setItem('royalkatti_sound_muted', String(this.muted));
+    } catch {
+      // Ignore
+    }
     return this.muted;
   }
 
   public setMute(mute: boolean) {
     this.muted = mute;
+    try {
+      localStorage.setItem('royalkatti_sound_muted', String(this.muted));
+    } catch {
+      // Ignore
+    }
+  }
+
+  public getVolume(): number {
+    return this.volume;
+  }
+
+  public setVolume(val: number): number {
+    const clamped = Math.max(0, Math.min(100, Math.round(val)));
+    this.volume = clamped;
+    if (clamped === 0) {
+      this.muted = true;
+    } else if (this.muted && clamped > 0) {
+      this.muted = false;
+    }
+    try {
+      localStorage.setItem('royalkatti_sound_volume', String(clamped));
+      localStorage.setItem('royalkatti_sound_muted', String(this.muted));
+    } catch {
+      // Ignore
+    }
+    return this.volume;
   }
 
   /**
    * Crisp snappy card flick/deal sound with slight pitch variation.
    */
   public playCardFlick(pitchMultiplier = 1) {
+    const masterVol = this.getMasterVolume();
+    if (masterVol <= 0) return;
     const c = this.getContext();
     if (!c) return;
 
@@ -59,8 +118,8 @@ class SoundEngine {
       osc.frequency.setValueAtTime(320 * pitchMultiplier, now);
       osc.frequency.exponentialRampToValueAtTime(80, now + 0.065);
 
-      gain.gain.setValueAtTime(0.24, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+      gain.gain.setValueAtTime(0.24 * masterVol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001 * masterVol, now + 0.07);
 
       osc.connect(filter).connect(gain).connect(c.destination);
       osc.start(now);
@@ -74,6 +133,8 @@ class SoundEngine {
    * Realistic deck riffle shuffle with multi-card fluttering.
    */
   public playShuffleRiffle() {
+    const masterVol = this.getMasterVolume();
+    if (masterVol <= 0) return;
     const c = this.getContext();
     if (!c) return;
 
@@ -91,8 +152,8 @@ class SoundEngine {
         osc.frequency.setValueAtTime(pitch, now);
         osc.frequency.exponentialRampToValueAtTime(70, now + 0.04);
 
-        gain.gain.setValueAtTime(0.12, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+        gain.gain.setValueAtTime(0.12 * masterVol, now);
+        gain.gain.exponentialRampToValueAtTime(0.001 * masterVol, now + 0.04);
 
         osc.connect(gain).connect(c.destination);
         osc.start(now);
@@ -107,6 +168,8 @@ class SoundEngine {
    * Realistic ceramic/clay casino chip clink sound.
    */
   public playChipClick() {
+    const masterVol = this.getMasterVolume();
+    if (masterVol <= 0) return;
     const c = this.getContext();
     if (!c) return;
 
@@ -119,8 +182,8 @@ class SoundEngine {
       osc.frequency.setValueAtTime(2200 + Math.random() * 200, now);
       osc.frequency.exponentialRampToValueAtTime(980, now + 0.04);
 
-      gain.gain.setValueAtTime(0.2, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+      gain.gain.setValueAtTime(0.2 * masterVol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001 * masterVol, now + 0.045);
 
       osc.connect(gain).connect(c.destination);
       osc.start(now);
@@ -134,6 +197,8 @@ class SoundEngine {
    * Majestic golden chime when the Point Card (Hukam) is revealed.
    */
   public playHukamChime() {
+    const masterVol = this.getMasterVolume();
+    if (masterVol <= 0) return;
     const c = this.getContext();
     if (!c) return;
 
@@ -147,8 +212,8 @@ class SoundEngine {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, now);
 
-        gain.gain.setValueAtTime(0.18, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+        gain.gain.setValueAtTime(0.18 * masterVol, now);
+        gain.gain.exponentialRampToValueAtTime(0.001 * masterVol, now + 0.45);
 
         osc.connect(gain).connect(c.destination);
         osc.start(now);
@@ -163,6 +228,8 @@ class SoundEngine {
    * Victorious royal fanfare when Player matches the Point Card!
    */
   public playWinFanfare() {
+    const masterVol = this.getMasterVolume();
+    if (masterVol <= 0) return;
     const c = this.getContext();
     if (!c) return;
 
@@ -184,8 +251,8 @@ class SoundEngine {
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(f, now);
 
-        gain.gain.setValueAtTime(0.2, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + d);
+        gain.gain.setValueAtTime(0.2 * masterVol, now);
+        gain.gain.exponentialRampToValueAtTime(0.001 * masterVol, now + d);
 
         osc.connect(gain).connect(c.destination);
         osc.start(now);
@@ -200,6 +267,8 @@ class SoundEngine {
    * Somber defeat tone when Dealer matches the Point Card.
    */
   public playLossSting() {
+    const masterVol = this.getMasterVolume();
+    if (masterVol <= 0) return;
     const c = this.getContext();
     if (!c) return;
 
@@ -213,8 +282,8 @@ class SoundEngine {
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(freq, now);
 
-        gain.gain.setValueAtTime(0.14, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        gain.gain.setValueAtTime(0.14 * masterVol, now);
+        gain.gain.exponentialRampToValueAtTime(0.001 * masterVol, now + 0.35);
 
         osc.connect(gain).connect(c.destination);
         osc.start(now);
