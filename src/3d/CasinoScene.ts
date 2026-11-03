@@ -35,38 +35,36 @@ interface ActiveTween {
   onComplete: () => void;
 }
 
-// North Side (-Z): Andar / Dealer's Side (Shoes + Dealer Mat + Hukam Pedestal)
-const DECK1_POS = new THREE.Vector3(-2.95, 0.1, -1.68);
-const DECK2_POS = new THREE.Vector3(-1.68, 0.1, -1.68);
-const DEALER_MAT_POS = new THREE.Vector3(0.18, 0.03, -1.68);
-const HUKAM_POS = new THREE.Vector3(2.68, 0.2, -1.68);
-
-// South Side (+Z): Bahar / Cutter's Side
-const PLAYER_MAT_POS = new THREE.Vector3(0, 0.03, 0.52);
+// Middle of Table (z = -0.68 to +0.68): Card System (1st & 2nd Shoes + Andar/Bahar Mats + Hukam Pedestal)
+const DECK1_POS = new THREE.Vector3(-2.95, 0.1, 0.0);
+const DECK2_POS = new THREE.Vector3(-1.68, 0.1, 0.0);
+const DEALER_MAT_POS = new THREE.Vector3(0.18, 0.03, -0.68);
+const PLAYER_MAT_POS = new THREE.Vector3(0.18, 0.03, 0.68);
+const HUKAM_POS = new THREE.Vector3(2.68, 0.2, 0.0);
 
 const SLOT_POSITIONS: Record<PlayerSlotId, THREE.Vector3> = {
-  1: new THREE.Vector3(-2.65, 0.02, 2.18),
-  2: new THREE.Vector3(0, 0.02, 2.32),
-  3: new THREE.Vector3(2.65, 0.02, 2.18),
+  1: new THREE.Vector3(-2.75, 0.02, 2.35),
+  2: new THREE.Vector3(0, 0.02, 2.42),
+  3: new THREE.Vector3(2.75, 0.02, 2.35),
 };
 
-// 6-Player Anti-Clockwise Ring Positions (A -> B -> C -> D -> E -> F)
+// 6-Player Symmetric Anti-Clockwise Ring: 3 on North Side (F, A, B) + 3 on South Side (C, D, E)
 const SEAT_3D_POSITIONS: Record<SeatId, THREE.Vector3> = {
-  A: new THREE.Vector3(0, 0.02, -3.15),
-  B: new THREE.Vector3(-3.45, 0.02, -0.35),
-  C: new THREE.Vector3(-2.65, 0.02, 2.18),
-  D: new THREE.Vector3(0, 0.02, 2.32),
-  E: new THREE.Vector3(2.65, 0.02, 2.18),
-  F: new THREE.Vector3(3.45, 0.02, -0.35),
+  A: new THREE.Vector3(0, 0.02, -2.42),
+  B: new THREE.Vector3(-2.75, 0.02, -2.35),
+  C: new THREE.Vector3(-2.75, 0.02, 2.35),
+  D: new THREE.Vector3(0, 0.02, 2.42),
+  E: new THREE.Vector3(2.75, 0.02, 2.35),
+  F: new THREE.Vector3(2.75, 0.02, -2.35),
 };
 
 const SEAT_PUCK_POSITIONS: Record<SeatId, THREE.Vector3> = {
-  A: new THREE.Vector3(1.45, 0.01, -2.65),
-  B: new THREE.Vector3(-3.25, 0.01, 0.35),
-  C: new THREE.Vector3(-1.95, 0.01, 1.85),
-  D: new THREE.Vector3(0.68, 0.01, 1.98),
-  E: new THREE.Vector3(1.95, 0.01, 1.85),
-  F: new THREE.Vector3(3.25, 0.01, 0.35),
+  A: new THREE.Vector3(0.75, 0.01, -2.18),
+  B: new THREE.Vector3(-2.0, 0.01, -2.12),
+  C: new THREE.Vector3(-2.0, 0.01, 2.02),
+  D: new THREE.Vector3(0.75, 0.01, 2.08),
+  E: new THREE.Vector3(2.0, 0.01, 2.02),
+  F: new THREE.Vector3(2.0, 0.01, -2.12),
 };
 
 export class CasinoScene {
@@ -278,13 +276,13 @@ export class CasinoScene {
     if (aspect < 1.15) {
       const clampedAspect = Math.max(aspect, 0.42);
       if (view === 'felt') {
-        const zoomOut = Math.min(1.48, 0.88 / clampedAspect);
-        outPos.set(0, 6.65 * zoomOut * 0.95, 5.55 * zoomOut * 0.92);
-        outLook.set(0, 0.02, -0.28);
+        const zoomOut = Math.min(1.92, 0.88 / clampedAspect);
+        outPos.set(0, 7.15 * zoomOut, 6.25 * zoomOut);
+        outLook.set(0, 0.02, -0.12);
       } else if (view === 'cinematic') {
-        const zoomOut = Math.min(1.48, 0.88 / clampedAspect);
-        outPos.set(0, 6.4 * zoomOut * 0.95, 6.8 * zoomOut * 0.9);
-        outLook.set(0, 0.1, -0.38);
+        const zoomOut = Math.min(1.92, 0.88 / clampedAspect);
+        outPos.set(0, 6.8 * zoomOut, 7.2 * zoomOut);
+        outLook.set(0, 0.1, -0.18);
       } else if (view === 'player') {
         const zoomOut = Math.min(1.24, 0.78 / clampedAspect);
         const slotX = SLOT_POSITIONS[this.activeSlotId].x * 0.32;
@@ -1308,86 +1306,17 @@ export class CasinoScene {
       metalness: 0.08,
     });
 
-    // 1. North Banker Chip Rack recessed along the Dealer Station edge (z = -3.15)
-    const trayGroup = new THREE.Group();
-    trayGroup.position.set(0, 0.04, -3.15);
+    // Build 3 North Players (Seats B, A, F) + 3 South Players (Seats C, D, E)
+    // Remove static chip tray so only active betting chips appear on the table!
+    void obsidianMat;
 
-    const trayFrame = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.11, 0.62), brassMat);
-    trayGroup.add(trayFrame);
-
-    const trayBed = new THREE.Mesh(new THREE.BoxGeometry(2.18, 0.12, 0.5), obsidianMat);
-    trayBed.position.y = 0.01;
-    trayGroup.add(trayBed);
-
-    const rackColors = [0xdc2626, 0x2563eb, 0xd97706, 0x16a34a, 0x7c3aed, 0xfbbf24];
-    const rackChipGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.42, 16);
-    for (let i = 0; i < 6; i++) {
-      const cx = -0.88 + i * 0.35;
-      const divider = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.14, 0.52), brassMat);
-      divider.position.set(cx - 0.175, 0.02, 0);
-      trayGroup.add(divider);
-
-      const chipCol = new THREE.Mesh(
-        rackChipGeo,
-        new THREE.MeshStandardMaterial({
-          color: rackColors[i],
-          roughness: 0.3,
-          metalness: 0.2,
-        })
-      );
-      chipCol.rotation.x = Math.PI / 2;
-      chipCol.position.set(cx, 0.08, 0);
-      trayGroup.add(chipCol);
-    }
-    this.tableGroup.add(trayGroup);
-
-    // 2. 3D Dealer Station Plaque above Banker Chip Rack
-    const dealerPlaqueGeo = new THREE.PlaneGeometry(2.15, 0.52);
-    const dealerPlaqueMat = new THREE.MeshBasicMaterial({
-      map: getTablePlaqueTexture(
-        "DEALER'S PLACE",
-        'BOT BANKER (SHUFFLER)',
-        '#fbbf24',
-        '#18090d',
-        this.renderer
-      ),
-      transparent: true,
-    });
-    this.dealerPlaqueMesh = new THREE.Mesh(dealerPlaqueGeo, dealerPlaqueMat);
-    this.dealerPlaqueMesh.position.set(0, 0.26, -3.55);
-    this.dealerPlaqueMesh.rotation.x = -0.52;
-    this.tableGroup.add(this.dealerPlaqueMesh);
-
-    // 3. North Royal Dealer Throne + Articulated 3D Croupier / Maharaja Banker behind North Rail
-    const dealerThrone = this.createDetailedChair({
-      x: 0,
-      z: -4.78,
-      rotY: Math.PI,
-      leatherMat: crimsonLeatherMat,
-      woodMat: chairWoodMat,
-      brassMat,
-      isThrone: true,
-    });
-    this.tableGroup.add(dealerThrone);
-
-    this.croupierGroup = this.createDetailedCharacter({
-      jacketColor: 0x0f172a,
-      vestColor: 0xb45309,
-      skinColor: 0xdba885,
-      headwear: 'royal_turban',
-      turbanColor: 0x881337,
-      hasMustache: true,
-    });
-    this.croupierGroup.position.set(0, -0.12, -4.46);
-    this.tableGroup.add(this.croupierGroup);
-
-    // 4. Three 3D Chesterfield Player Lounge Chairs + Seated 3D Challenger Figures at Slots 1, 2, 3
-    const southSeatConfigs: Array<{
-      id: PlayerSlotId;
+    const allSeatConfigs: Array<{
+      seatId: SeatId;
       x: number;
       z: number;
       rotY: number;
-      isVIP: boolean;
+      isNorth: boolean;
+      isCenter: boolean;
       jacketColor: number;
       vestColor: number;
       skinColor: number;
@@ -1395,12 +1324,56 @@ export class CasinoScene {
       turbanColor?: number;
       hasMustache?: boolean;
     }> = [
+      // North Side: 3 Seats (B = North-West, A = North-Center, F = North-East)
       {
-        id: 1,
-        x: -2.85,
+        seatId: 'B',
+        x: -2.75,
+        z: -4.62,
+        rotY: Math.PI - 0.16,
+        isNorth: true,
+        isCenter: false,
+        jacketColor: 0x064e3b,
+        vestColor: 0xf59e0b,
+        skinColor: 0xd6a17c,
+        headwear: 'royal_turban',
+        turbanColor: 0x1e3a8a,
+        hasMustache: true,
+      },
+      {
+        seatId: 'A',
+        x: 0,
+        z: -4.78,
+        rotY: Math.PI,
+        isNorth: true,
+        isCenter: true,
+        jacketColor: 0x0f172a,
+        vestColor: 0xb45309,
+        skinColor: 0xdba885,
+        headwear: 'royal_turban',
+        turbanColor: 0x881337,
+        hasMustache: true,
+      },
+      {
+        seatId: 'F',
+        x: 2.75,
+        z: -4.62,
+        rotY: Math.PI + 0.16,
+        isNorth: true,
+        isCenter: false,
+        jacketColor: 0x312e81,
+        vestColor: 0xd97706,
+        skinColor: 0xe5b899,
+        headwear: 'styled_hair',
+        hasMustache: true,
+      },
+      // South Side: 3 Seats (C = South-West, D = South-Center, E = South-East)
+      {
+        seatId: 'C',
+        x: -2.75,
         z: 4.65,
         rotY: 0.16,
-        isVIP: false,
+        isNorth: false,
+        isCenter: false,
         jacketColor: 0x1e3a8a,
         vestColor: 0xd97706,
         skinColor: 0xd6a17c,
@@ -1408,11 +1381,12 @@ export class CasinoScene {
         hasMustache: true,
       },
       {
-        id: 2,
+        seatId: 'D',
         x: 0,
         z: 4.82,
         rotY: 0,
-        isVIP: true,
+        isNorth: false,
+        isCenter: true,
         jacketColor: 0x4c1d95,
         vestColor: 0xf59e0b,
         skinColor: 0xdba885,
@@ -1421,11 +1395,12 @@ export class CasinoScene {
         hasMustache: true,
       },
       {
-        id: 3,
-        x: 2.85,
+        seatId: 'E',
+        x: 2.75,
         z: 4.65,
         rotY: -0.16,
-        isVIP: false,
+        isNorth: false,
+        isCenter: false,
         jacketColor: 0x7f1d1d,
         vestColor: 0xfbbf24,
         skinColor: 0xe5b899,
@@ -1434,19 +1409,19 @@ export class CasinoScene {
       },
     ];
 
-    for (const cfg of southSeatConfigs) {
+    for (const cfg of allSeatConfigs) {
       const chair = this.createDetailedChair({
         x: cfg.x,
         z: cfg.z,
         rotY: cfg.rotY,
-        leatherMat: cfg.isVIP ? crimsonLeatherMat : emeraldLeatherMat,
+        leatherMat: cfg.isCenter ? crimsonLeatherMat : emeraldLeatherMat,
         woodMat: chairWoodMat,
         brassMat,
-        isThrone: false,
+        isThrone: cfg.seatId === 'A',
       });
       this.tableGroup.add(chair);
 
-      const botFigure = this.createDetailedCharacter({
+      const charFigure = this.createDetailedCharacter({
         jacketColor: cfg.jacketColor,
         vestColor: cfg.vestColor,
         skinColor: cfg.skinColor,
@@ -1454,13 +1429,26 @@ export class CasinoScene {
         turbanColor: cfg.turbanColor,
         hasMustache: cfg.hasMustache,
       });
-      botFigure.position.set(cfg.x * 0.96, -0.16, cfg.z - 0.25);
-      // Face inward toward the North Dealer across the table
-      botFigure.rotation.y = Math.PI + cfg.rotY;
-      // Hide character on whichever slot the human player is actively occupying
-      botFigure.visible = cfg.id !== this.activeSlotId;
-      this.tableGroup.add(botFigure);
-      this.slotCharacterGroups[cfg.id] = botFigure;
+
+      if (cfg.isNorth) {
+        charFigure.position.set(cfg.x * 0.96, -0.14, cfg.z + 0.3);
+        charFigure.rotation.y = cfg.rotY - Math.PI;
+      } else {
+        charFigure.position.set(cfg.x * 0.96, -0.16, cfg.z - 0.25);
+        charFigure.rotation.y = Math.PI + cfg.rotY;
+      }
+
+      this.tableGroup.add(charFigure);
+      if (cfg.seatId === 'A') {
+        this.croupierGroup = charFigure;
+      } else if (cfg.seatId === 'C') {
+        this.slotCharacterGroups[1] = charFigure;
+      } else if (cfg.seatId === 'D') {
+        charFigure.visible = false; // Human seat by default
+        this.slotCharacterGroups[2] = charFigure;
+      } else if (cfg.seatId === 'E') {
+        this.slotCharacterGroups[3] = charFigure;
+      }
     }
   }
 
@@ -1614,8 +1602,8 @@ export class CasinoScene {
   }
 
   /**
-   * Builds the 3 Player Slot 3D Betting Rings, 3D Seat Plaques, Active Slot Halo,
-   * and the 3D Golden Dealer Crown Puck that moves to whoever wins the round.
+   * Builds the 6 Player Betting Rings (3 on North Side: B, A, F; 3 on South Side: C, D, E),
+   * 6 Seat Plaques, Glowing Cutter Halo, and 3D Golden Dealer Crown Puck.
    */
   private buildPlayerSlotsAndPuck() {
     const brassMat = new THREE.MeshStandardMaterial({
@@ -1624,89 +1612,72 @@ export class CasinoScene {
       roughness: 0.22,
     });
 
-    const slotIds: PlayerSlotId[] = [1, 2, 3];
-    const southSeatLetters: Record<PlayerSlotId, SeatId> = { 1: 'C', 2: 'D', 3: 'E' };
-    for (const id of slotIds) {
-      const pos = SLOT_POSITIONS[id];
-      const seatLetter = southSeatLetters[id];
+    const seatMeta: Array<{ id: SeatId; isNorth: boolean; label: string }> = [
+      { id: 'B', isNorth: true, label: 'SEAT B • KABIR' },
+      { id: 'A', isNorth: true, label: 'SEAT A • NAWAB' },
+      { id: 'F', isNorth: true, label: 'SEAT F • REHAN' },
+      { id: 'C', isNorth: false, label: 'SEAT C • ARYAN' },
+      { id: 'D', isNorth: false, label: 'SEAT D • YOU' },
+      { id: 'E', isNorth: false, label: 'SEAT E • ZOYA' },
+    ];
 
-      // 3D Raised Brass Betting Circle on each Player Slot
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.03, 14, 36), brassMat);
+    const plaqueGeo = new THREE.PlaneGeometry(1.62, 0.44);
+
+    for (const meta of seatMeta) {
+      const pos = SEAT_3D_POSITIONS[meta.id];
+
+      // 3D Raised Brass Betting Circle on each of the 6 seats
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.028, 14, 36), brassMat);
       ring.rotation.x = Math.PI / 2;
-      ring.position.set(pos.x, 0.025, pos.z + 0.08);
+      ring.position.set(pos.x, 0.025, pos.z);
       this.tableGroup.add(ring);
 
-      // 3D Slot Plaque along the South Rail for Seats C, D, E
-      const plaqueGeo = new THREE.PlaneGeometry(1.68, 0.46);
-      const isYou = id === this.activeSlotId;
-      const title = isYou
-        ? `SEAT ${seatLetter} • YOU`
-        : `SEAT ${seatLetter} • BOT ${id === 1 ? 'ARYAN' : 'ZOYA'}`;
-      const sub = isYou ? 'ACTIVE PLAYER' : 'TABLE SEAT';
       const plaqueMat = new THREE.MeshBasicMaterial({
         map: getTablePlaqueTexture(
-          title,
-          sub,
-          isYou ? '#38bdf8' : '#fbbf24',
-          isYou ? '#082f49' : '#090d16',
+          meta.label,
+          '1000 RC',
+          meta.id === 'D' ? '#34d399' : '#fbbf24',
+          meta.id === 'D' ? '#064e3b' : '#090d16',
           this.renderer
         ),
         transparent: true,
       });
+
       const plaqueMesh = new THREE.Mesh(plaqueGeo, plaqueMat);
-      plaqueMesh.position.set(pos.x, 0.24, pos.z + 1.02);
-      plaqueMesh.rotation.x = -0.58;
+      plaqueMesh.position.set(
+        pos.x,
+        0.24,
+        meta.isNorth ? pos.z - 0.92 : pos.z + 0.92
+      );
+      plaqueMesh.rotation.x = meta.isNorth ? -0.52 : -0.58;
       this.tableGroup.add(plaqueMesh);
-      this.slotPlaqueMeshes[id] = plaqueMesh;
-      this.seatPlaqueMeshes[seatLetter] = plaqueMesh;
+      this.seatPlaqueMeshes[meta.id] = plaqueMesh;
+
+      if (meta.id === 'A') this.dealerPlaqueMesh = plaqueMesh;
+      if (meta.id === 'C') this.slotPlaqueMeshes[1] = plaqueMesh;
+      if (meta.id === 'D') this.slotPlaqueMeshes[2] = plaqueMesh;
+      if (meta.id === 'E') this.slotPlaqueMeshes[3] = plaqueMesh;
     }
 
-    // Register North Plaque as Seat A
-    this.seatPlaqueMeshes['A'] = this.dealerPlaqueMesh;
-
-    // Build West Plaque (Seat B • Bot Kabir) and East Plaque (Seat F • Bot Rehan)
-    const sidePlaqueGeo = new THREE.PlaneGeometry(1.52, 0.42);
-    const seatBMat = new THREE.MeshBasicMaterial({
-      map: getTablePlaqueTexture('SEAT B • KABIR', '✂️ CUTTER', '#38bdf8', '#082f49', this.renderer),
-      transparent: true,
-    });
-    const seatBMesh = new THREE.Mesh(sidePlaqueGeo, seatBMat);
-    seatBMesh.position.set(-4.15, 0.25, -0.15);
-    seatBMesh.rotation.x = -0.55;
-    seatBMesh.rotation.y = 0.28;
-    this.tableGroup.add(seatBMesh);
-    this.seatPlaqueMeshes['B'] = seatBMesh;
-
-    const seatFMat = new THREE.MeshBasicMaterial({
-      map: getTablePlaqueTexture('SEAT F • REHAN', 'PLAYER SEAT', '#fbbf24', '#090d16', this.renderer),
-      transparent: true,
-    });
-    const seatFMesh = new THREE.Mesh(sidePlaqueGeo, seatFMat);
-    seatFMesh.position.set(4.15, 0.25, -0.15);
-    seatFMesh.rotation.x = -0.55;
-    seatFMesh.rotation.y = -0.28;
-    this.tableGroup.add(seatFMesh);
-    this.seatPlaqueMeshes['F'] = seatFMesh;
-
-    // Active Cutter / Player Slot Glowing Halo
-    const haloGeo = new THREE.RingGeometry(0.52, 0.64, 36);
+    // Active Cutter Glowing Halo
+    const haloGeo = new THREE.RingGeometry(0.48, 0.6, 36);
     const haloMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.82,
     });
     this.activeSlotHalo = new THREE.Mesh(haloGeo, haloMat);
     this.activeSlotHalo.rotation.x = -Math.PI / 2;
     this.activeSlotHalo.position.set(
-      SLOT_POSITIONS[2].x,
+      SEAT_3D_POSITIONS.B.x,
       0.018,
-      SLOT_POSITIONS[2].z + 0.08
+      SEAT_3D_POSITIONS.B.z
     );
     this.tableGroup.add(this.activeSlotHalo);
 
     // 3D Golden Dealer Crown Puck (DEALER BUCK)
-    const puckGeo = new THREE.CylinderGeometry(0.38, 0.41, 0.09, 32);
+    const puckGeo = new THREE.CylinderGeometry(0.36, 0.39, 0.09, 32);
     const puckTopMat = new THREE.MeshStandardMaterial({
       map: getDealerPuckTexture(this.renderer),
       roughness: 0.22,
@@ -1722,18 +1693,18 @@ export class CasinoScene {
     puckMesh.castShadow = !this.isSoftwareGl;
     this.dealerPuckGroup.add(puckMesh);
 
-    const puckShadow = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), this.cardShadowMat);
+    const puckShadow = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), this.cardShadowMat);
     puckShadow.rotation.x = -Math.PI / 2;
     puckShadow.position.y = 0.006;
     this.dealerPuckGroup.add(puckShadow);
 
-    // Placed cleanly to the right of the Banker Chip Rack so it never touches dealt cards
-    this.dealerPuckGroup.position.set(1.45, 0.01, -2.65);
+    this.dealerPuckGroup.position.copy(SEAT_PUCK_POSITIONS.A);
     this.tableGroup.add(this.dealerPuckGroup);
   }
 
   /**
-   * Synchronizes the 3D plaques, Golden Dealer Puck, and Glowing Cutter Halo across all 6 seats (A-F).
+   * Synchronizes the 3D plaques, active Betting Amount Chips, Golden Dealer Puck,
+   * and Glowing Cutter Halo across all 6 seats (A-F).
    */
   public async syncSeats3D(
     dealerSeat: SeatId,
@@ -1751,10 +1722,14 @@ export class CasinoScene {
         ? `SEAT ${s.id} • YOU ${isDealer ? '👑' : isCutter ? '✂️' : ''}`
         : `SEAT ${s.id} • ${s.shortName.toUpperCase()} ${isDealer ? '👑' : isCutter ? '✂️' : ''}`;
 
-      let sub = isDealer ? '👑 DEALER (SHUFFLE & DEAL)' : isCutter ? '✂️ CUTTER (CUTS FIRST)' : 'TABLE SEAT';
+      let sub = isDealer
+        ? `👑 UNDER (SHUFFLER) • ${s.balance} RC`
+        : isCutter
+        ? `✂️ BAHAR CUTTER • ${s.balance} RC`
+        : `${s.balance} RC`;
       if (!isDealer && s.betSide && s.betAmount > 0) {
         const sideLabel = s.betSide === 'dealer' ? 'ANDAR' : 'BAHAR';
-        sub = `${isCutter ? '✂️ ' : ''}₹${s.betAmount} ON ${sideLabel}`;
+        sub = `${isCutter ? '✂️ ' : ''}BET ${s.betAmount} RC (${sideLabel})`;
       }
 
       const borderColor = isDealer
@@ -1777,10 +1752,13 @@ export class CasinoScene {
       mat.needsUpdate = true;
     }
 
+    // Render ONLY the active betting amount chips on the table
+    this.renderActiveBetChips(seats);
+
     // Move glowing cutter halo to Cutter's seat
     const cutterPos = SEAT_3D_POSITIONS[cutterSeat];
     if (cutterPos) {
-      this.activeSlotHalo.position.set(cutterPos.x, 0.018, cutterPos.z + 0.08);
+      this.activeSlotHalo.position.set(cutterPos.x, 0.018, cutterPos.z);
     }
 
     // Move 3D Golden Dealer Crown Puck to Dealer's seat
@@ -1801,148 +1779,82 @@ export class CasinoScene {
     this.spawnGoldenShockwave(targetPos);
   }
 
-  /**
-   * Updates which of the 3 South Player Slots the user is sitting in,
-   * moving the glowing slot halo and updating 3D seat plaques.
-   */
   public setActivePlayerSlot(slotId: PlayerSlotId) {
     this.activeSlotId = slotId;
-    const pos = SLOT_POSITIONS[slotId];
-    this.activeSlotHalo.position.set(pos.x, 0.018, pos.z + 0.08);
-    this.spawnGoldenShockwave(new THREE.Vector3(pos.x, 0.05, pos.z + 0.08));
+  }
 
-    // Show 3D Bot Challenger bodies in the two unoccupied South seats; keep the user's active slot open
-    const allSlots: PlayerSlotId[] = [1, 2, 3];
-    for (const id of allSlots) {
-      if (this.slotCharacterGroups[id]) {
-        this.slotCharacterGroups[id].visible = id !== slotId;
-      }
-    }
-
-    this.refreshRolePlaques();
-
-    if (this.currentDealerRole === 'player') {
-      this.dealerPuckGroup.position.set(pos.x + 0.65, 0.01, pos.z - 0.35);
-    }
+  public async setDealerRole(dealer: Participant, animate = true): Promise<void> {
+    this.currentDealerRole = dealer;
+    void animate;
   }
 
   /**
-   * Animates the 3D Dealer Crown Puck to whoever is the current Dealer ('bot' at North Station
-   * or 'player' at their active South Slot) and updates the 3D station plaques.
+   * Requirement 4: Only the betting amount chips appear on the table!
+   * Dynamically builds 3D casino chip stacks inside each player's betting ring
+   * matching their exact `betAmount` (0 chips when `betAmount === 0`).
    */
-  public async setDealerRole(dealer: Participant, animate = true): Promise<void> {
-    this.currentDealerRole = dealer;
-    this.refreshRolePlaques();
-
-    const slotPos = SLOT_POSITIONS[this.activeSlotId];
-    const targetPos =
-      dealer === 'bot'
-        ? new THREE.Vector3(1.45, 0.01, -2.65)
-        : new THREE.Vector3(slotPos.x + 0.68, 0.01, slotPos.z - 0.32);
-
-    if (!animate) {
-      this.dealerPuckGroup.position.copy(targetPos);
-      return;
-    }
-
-    const startPos = this.dealerPuckGroup.position.clone();
-    await this.runTween(0.55, (progress, ease) => {
-      this.dealerPuckGroup.position.lerpVectors(startPos, targetPos, ease);
-      this.dealerPuckGroup.position.y = 0.01 + Math.sin(progress * Math.PI) * 0.45;
-      this.dealerPuckGroup.rotation.y = progress * Math.PI * 2;
-    });
-    this.dealerPuckGroup.position.copy(targetPos);
-    this.dealerPuckGroup.rotation.y = 0;
-    this.spawnGoldenShockwave(targetPos);
-  }
-
-  private refreshRolePlaques() {
-    const dealerIsYou = this.currentDealerRole === 'player';
-
-    const dealerMat = this.dealerPlaqueMesh.material as THREE.MeshBasicMaterial;
-    dealerMat.map = getTablePlaqueTexture(
-      dealerIsYou ? "DEALER'S PLACE • YOU 👑" : "DEALER'S PLACE • BOT 🤖",
-      dealerIsYou ? 'YOU SHUFFLE • BOT CUTS' : 'BOT SHUFFLES • YOU CUT',
-      dealerIsYou ? '#34d399' : '#fbbf24',
-      dealerIsYou ? '#064e3b' : '#18090d',
-      this.renderer
-    );
-    dealerMat.needsUpdate = true;
-
-    const slotIds: PlayerSlotId[] = [1, 2, 3];
-    for (const id of slotIds) {
-      const isYou = id === this.activeSlotId;
-      const botName = id === 1 ? 'BOT ARYAN' : id === 2 ? 'BOT NAWAB' : 'BOT ZOYA';
-      const title = isYou ? `SLOT ${id} • YOU` : `SLOT ${id} • ${botName}`;
-      const sub = isYou
-        ? dealerIsYou
-          ? '👑 YOU ARE DEALER'
-          : '✂️ YOU CUT & BET'
-        : dealerIsYou && id === (this.activeSlotId === 2 ? 1 : 2)
-        ? '✂️ BOT CUTTER'
-        : 'CHALLENGER SEAT';
-
-      const mat = this.slotPlaqueMeshes[id].material as THREE.MeshBasicMaterial;
-      mat.map = getTablePlaqueTexture(
-        title,
-        sub,
-        isYou ? '#38bdf8' : '#fbbf24',
-        isYou ? '#082f49' : '#090d16',
-        this.renderer
-      );
-      mat.needsUpdate = true;
-    }
-  }
-
   private buildChipStacks() {
-    const chipConfigs = [
-      // Slot 1 chips
-      { denom: 100, color: '#b91c1c', x: -2.65, z: 2.26, count: 5 },
-      { denom: 50, color: '#1d4ed8', x: -3.28, z: 2.32, count: 4 },
-      // Slot 2 (Center VIP) chips
-      { denom: 1000, color: '#d97706', x: 0, z: 2.4, count: 7 },
-      { denom: 500, color: '#6d28d9', x: -0.62, z: 2.46, count: 5 },
-      // Slot 3 chips
-      { denom: 250, color: '#15803d', x: 2.65, z: 2.26, count: 6 },
-      { denom: 100, color: '#b91c1c', x: 3.28, z: 2.32, count: 4 },
+    this.tableGroup.add(this.chipsGroup);
+  }
+
+  public renderActiveBetChips(seats: SeatInfo[]) {
+    while (this.chipsGroup.children.length > 0) {
+      this.chipsGroup.remove(this.chipsGroup.children[0]);
+    }
+
+    const chipGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.048, 24);
+    const chipShadowGeo = new THREE.PlaneGeometry(0.62, 0.62);
+
+    const denomStyles: Array<{ denom: number; color: string }> = [
+      { denom: 500, color: '#6d28d9' },
+      { denom: 250, color: '#15803d' },
+      { denom: 100, color: '#b91c1c' },
+      { denom: 50, color: '#1d4ed8' },
     ];
 
-    const chipGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.052, 24);
-    const chipShadowGeo = new THREE.PlaneGeometry(0.68, 0.68);
+    for (const s of seats) {
+      if (s.betAmount <= 0 || !s.betSide) continue;
+      const pos = SEAT_3D_POSITIONS[s.id];
+      if (!pos) continue;
 
-    chipConfigs.forEach(({ denom, color, x, z, count }) => {
-      const chipTex = getChipTexture(denom, color, '#f8fafc', this.renderer);
-      const topBottomMat = new THREE.MeshStandardMaterial({
-        map: chipTex,
-        color: 0xffffff,
-        roughness: 0.28,
-        metalness: 0.18,
-      });
-      const sideMat = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.38,
-        metalness: 0.12,
-      });
-
-      const mats = [sideMat, topBottomMat, topBottomMat];
+      let remaining = s.betAmount;
+      const chipsToStack: Array<{ denom: number; color: string }> = [];
+      for (const d of denomStyles) {
+        while (remaining >= d.denom && chipsToStack.length < 10) {
+          chipsToStack.push(d);
+          remaining -= d.denom;
+        }
+      }
+      if (chipsToStack.length === 0) {
+        chipsToStack.push({ denom: 50, color: '#1d4ed8' });
+      }
 
       const sh = new THREE.Mesh(chipShadowGeo, this.cardShadowMat);
       sh.rotation.x = -Math.PI / 2;
-      sh.position.set(x, 0.008, z);
+      sh.position.set(pos.x, 0.008, pos.z);
       this.chipsGroup.add(sh);
 
-      for (let i = 0; i < count; i++) {
-        const chip = new THREE.Mesh(chipGeo, mats);
-        const jitterX = Math.sin(i * 1.7 + denom) * 0.012;
-        const jitterZ = Math.cos(i * 2.3 + denom) * 0.012;
-        chip.position.set(x + jitterX, 0.032 + i * 0.054, z + jitterZ);
-        chip.rotation.y = (i * 0.65) % (Math.PI * 2);
-        chip.castShadow = !this.isSoftwareGl;
-        this.chipsGroup.add(chip);
-      }
-    });
+      chipsToStack.forEach((c, idx) => {
+        const chipTex = getChipTexture(c.denom, c.color, '#f8fafc', this.renderer);
+        const topBottomMat = new THREE.MeshStandardMaterial({
+          map: chipTex,
+          color: 0xffffff,
+          roughness: 0.28,
+          metalness: 0.18,
+        });
+        const sideMat = new THREE.MeshStandardMaterial({
+          color: c.color,
+          roughness: 0.38,
+          metalness: 0.12,
+        });
 
-    this.tableGroup.add(this.chipsGroup);
+        const chipMesh = new THREE.Mesh(chipGeo, [sideMat, topBottomMat, topBottomMat]);
+        chipMesh.position.set(pos.x, 0.03 + idx * 0.05, pos.z);
+        chipMesh.rotation.y = (idx * 0.65) % (Math.PI * 2);
+        chipMesh.castShadow = !this.isSoftwareGl;
+        this.chipsGroup.add(chipMesh);
+      });
+    }
   }
 
   private buildDeckVisuals() {

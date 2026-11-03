@@ -27,19 +27,22 @@ export type SeatId = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
 
 export const SEAT_ORDER: SeatId[] = ['A', 'B', 'C', 'D', 'E', 'F'];
 
+export const INITIAL_SEAT_COINS = 1000;
+export const TOTAL_TABLE_COINS = INITIAL_SEAT_COINS * SEAT_ORDER.length; // 6,000 RC constant
+
 export type GamePhase =
   | 'title'
   | 'shuffling' // Dealer shuffles the deck (auto if Bot is Dealer, button if You are Dealer)
   | 'cutting'   // First, Cutter cuts the deck and reveals the Hukam Point Card
-  | 'betting'   // Bets are placed in anti-clockwise order starting from the Cutter on Andar (Dealer) or Bahar (Cutter)
-  | 'dealing'   // Dealer deals cards (Bots auto-deal as they like; Cutter never deals)
+  | 'betting'   // Bets are placed in anti-clockwise order starting from the Cutter (Cutter is locked to Bahar; others choose Andar or Bahar)
+  | 'dealing'   // Dealer deals cards in the middle of the table (Bots auto-deal; Cutter never deals)
   | 'paused'
   | 'round_over';
 
 /**
  * Table Side:
- * - 'dealer' = Under / Dealer's Side (Andar Mat on North side)
- * - 'player' = Bahar / Cutter's Side (Bahar Mat on South side)
+ * - 'dealer' = Under / Shuffler's Side (Andar Mat in center-top)
+ * - 'player' = Bahar / Cutter's Side (Bahar Mat in center-bottom)
  */
 export type Side = 'player' | 'dealer';
 
@@ -52,6 +55,7 @@ export interface SeatInfo {
   name: string;
   shortName: string;
   isHuman: boolean;
+  balance: number;
   betAmount: number;
   betSide: Side | null;
 }

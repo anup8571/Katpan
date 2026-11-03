@@ -1,6 +1,6 @@
 import React from 'react';
 import { GamePhase, SeatId, Side } from '../game/types';
-import { Shuffle, Play, FastForward, Scissors, Crown, Sparkles } from 'lucide-react';
+import { Shuffle, Play, FastForward, Scissors, Crown, Sparkles, Dices } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 
 interface ControlDockProps {
@@ -13,6 +13,7 @@ interface ControlDockProps {
   onPlayerShuffle: () => void;
   currentBet: number;
   onSelectBet: (bet: number) => void;
+  onRandomizeBet: () => void;
   cutIndex: number;
   onChangeCutIndex: (cut: number) => void;
   onConfirmCut: () => void;
@@ -30,7 +31,6 @@ const CHIP_DENOMS = [
   { value: 100, bg: '#7f1d1d', border: '#f87171', text: '#ffffff' },
   { value: 250, bg: '#064e3b', border: '#34d399', text: '#ffffff' },
   { value: 500, bg: '#4c1d95', border: '#c084fc', text: '#ffffff' },
-  { value: 1000, bg: '#78350f', border: '#fbbf24', text: '#fef3c7' },
 ];
 
 export const ControlDock: React.FC<ControlDockProps> = ({
@@ -43,6 +43,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   onPlayerShuffle,
   currentBet,
   onSelectBet,
+  onRandomizeBet,
   cutIndex,
   onChangeCutIndex,
   onConfirmCut,
@@ -63,7 +64,15 @@ export const ControlDock: React.FC<ControlDockProps> = ({
       <div className="pointer-events-auto bg-slate-950/55 backdrop-blur-md border border-amber-400/40 rounded-2xl p-2.5 shadow-[0_10px_32px_rgba(0,0,0,0.65)] flex flex-col gap-2">
         {/* Live Anti-Clockwise Action Status Strip */}
         <div className="flex items-center justify-between gap-2 px-1">
-          <span className="text-[11px] font-bold text-amber-100 truncate">{statusText}</span>
+          <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-100 truncate min-w-0">
+            {((phase === 'shuffling' && !isHumanDealer) ||
+              (phase === 'cutting' && !isHumanCutter) ||
+              (phase === 'betting' && !isHumanBetTurn) ||
+              (phase === 'dealing' && !isHumanDealer)) && (
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" />
+            )}
+            <span className="truncate">{statusText}</span>
+          </span>
           <button
             onClick={onToggleBotFastMode}
             title="Toggle 2x Bot Speed"
@@ -77,7 +86,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
           </button>
         </div>
 
-        {/* STAGE 1: SHUFFLING (When YOU are the Dealer) */}
+        {/* STAGE 1: SHUFFLING (When YOU are the Dealer / Under) */}
         {phase === 'shuffling' && isHumanDealer && (
           <button
             onClick={onPlayerShuffle}
@@ -128,13 +137,13 @@ export const ControlDock: React.FC<ControlDockProps> = ({
           </div>
         )}
 
-        {/* STAGE 3: ANTI-CLOCKWISE BETTING (When it is YOUR turn to Bet on Andar/Dealer or Bahar/Cutter) */}
+        {/* STAGE 3: ANTI-CLOCKWISE BETTING */}
         {isHumanBetTurn && (
           <div className="flex flex-col gap-2">
-            {/* Chip Selector Row */}
+            {/* Chip Selector Row + Random Bet Button */}
             <div className="flex items-center justify-between gap-2 bg-slate-900/65 border border-slate-800 rounded-xl px-2.5 py-1.5">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-200">
-                Select Wager:
+                Wager (RC):
               </span>
               <div className="flex items-center gap-1.5">
                 {CHIP_DENOMS.map(({ value, bg, border, text }) => {
@@ -157,41 +166,68 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                           : 'opacity-80 hover:opacity-100'
                       }`}
                     >
-                      {value >= 1000 ? `${value / 1000}k` : value}
+                      {value}
                     </button>
                   );
                 })}
+                <button
+                  onClick={() => {
+                    soundEngine.playChipClick();
+                    onRandomizeBet();
+                  }}
+                  title="Pick Random Wager"
+                  className="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-[10px] font-black text-amber-200 flex items-center gap-1 cursor-pointer transition-all"
+                >
+                  <Dices className="w-3 h-3 text-amber-300" />
+                  <span>Random</span>
+                </button>
               </div>
             </div>
 
-            {/* Choose Side: Under/Dealer's Side (Andar) OR Bahar/Cutter's Side */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => onPlaceHumanBet('dealer')}
-                className="py-2.5 px-3 rounded-xl font-black text-xs text-white bg-gradient-to-r from-rose-600 to-pink-600 hover:brightness-110 border border-rose-300 shadow-[0_3px_0_#881337] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
-              >
-                <span className="flex items-center gap-1">
-                  <Crown className="w-3.5 h-3.5 text-amber-300" />
-                  <span>BET ANDAR (₹{currentBet})</span>
-                </span>
-                <span className="text-[9px] font-bold text-rose-100/90 mt-0.5">
-                  Under • Dealer ({dealerSeat}) Side
-                </span>
-              </button>
-
+            {/* RULE 1: If YOU are the Cutter, you CANNOT choose Andar or Bahar — you are locked to BAHAR! */}
+            {isHumanCutter ? (
               <button
                 onClick={() => onPlaceHumanBet('player')}
-                className="py-2.5 px-3 rounded-xl font-black text-xs text-slate-950 bg-gradient-to-r from-sky-300 via-cyan-300 to-sky-400 hover:brightness-110 border border-sky-100 shadow-[0_3px_0_#0369a1] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
+                className="w-full py-2.5 px-4 rounded-xl font-black text-xs sm:text-sm text-slate-950 bg-gradient-to-r from-sky-300 via-cyan-300 to-sky-400 hover:brightness-110 border border-sky-100 shadow-[0_3px_0_#0369a1] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
               >
-                <span className="flex items-center gap-1">
-                  <Scissors className="w-3.5 h-3.5" />
-                  <span>BET BAHAR (₹{currentBet})</span>
+                <span className="flex items-center gap-1.5">
+                  <Scissors className="w-4 h-4" />
+                  <span>PLACE CUTTER BET ON BAHAR ({currentBet} RC)</span>
                 </span>
                 <span className="text-[9px] font-extrabold text-slate-900/85 mt-0.5">
-                  Bahar • Cutter ({cutterSeat}) Side
+                  You cut the deck • Main opponent of Under ({dealerSeat}) — Locked to Bahar
                 </span>
               </button>
-            </div>
+            ) : (
+              /* Non-cutter players choose between Andar (Under/Shuffler) or Bahar (Cutter) */
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => onPlaceHumanBet('dealer')}
+                  className="py-2.5 px-3 rounded-xl font-black text-xs text-white bg-gradient-to-r from-rose-600 to-pink-600 hover:brightness-110 border border-rose-300 shadow-[0_3px_0_#881337] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
+                >
+                  <span className="flex items-center gap-1">
+                    <Crown className="w-3.5 h-3.5 text-amber-300" />
+                    <span>BET ANDAR ({currentBet} RC)</span>
+                  </span>
+                  <span className="text-[9px] font-bold text-rose-100/90 mt-0.5">
+                    Under • Shuffler ({dealerSeat}) Side
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => onPlaceHumanBet('player')}
+                  className="py-2.5 px-3 rounded-xl font-black text-xs text-slate-950 bg-gradient-to-r from-sky-300 via-cyan-300 to-sky-400 hover:brightness-110 border border-sky-100 shadow-[0_3px_0_#0369a1] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
+                >
+                  <span className="flex items-center gap-1">
+                    <Scissors className="w-3.5 h-3.5" />
+                    <span>BET BAHAR ({currentBet} RC)</span>
+                  </span>
+                  <span className="text-[9px] font-extrabold text-slate-900/85 mt-0.5">
+                    Bahar • Cutter ({cutterSeat}) Side
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -219,21 +255,6 @@ export const ControlDock: React.FC<ControlDockProps> = ({
               <FastForward className="w-4 h-4" />
               <span>{isAutoDealing ? 'STOP AUTO' : 'AUTO DEAL'}</span>
             </button>
-          </div>
-        )}
-
-        {/* STAGE 4B: BOT AUTO-PLAYING INDICATOR (When Bot is Shuffling, Cutting, Betting, or Auto-Dealing) */}
-        {((phase === 'shuffling' && !isHumanDealer) ||
-          (phase === 'cutting' && !isHumanCutter) ||
-          (phase === 'betting' && !isHumanBetTurn) ||
-          (phase === 'dealing' && !isHumanDealer)) && (
-          <div className="flex items-center justify-center gap-2 py-1.5 px-3 rounded-xl bg-slate-900/60 border border-amber-400/25 text-xs font-extrabold text-amber-200">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" />
-            <span>
-              {phase === 'dealing'
-                ? `🤖 Dealer ${dealerSeat} is auto-dealing cards (Cutter ${cutterSeat} watches)...`
-                : statusText}
-            </span>
           </div>
         )}
       </div>

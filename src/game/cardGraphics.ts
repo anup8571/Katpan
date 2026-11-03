@@ -898,8 +898,8 @@ export function getFeltTableTexture(renderer?: THREE.WebGLRenderer): {
   map: THREE.CanvasTexture;
   bumpMap: THREE.CanvasTexture;
 } {
-  const mapKey = 'felt_table_realistic_v6_6seats';
-  const bumpKey = 'felt_bump_realistic_v6_6seats';
+  const mapKey = 'felt_table_realistic_v7_centered_cards_6seats';
+  const bumpKey = 'felt_bump_realistic_v7_centered_cards_6seats';
   if (cardTextureCache.has(mapKey) && cardTextureCache.has(bumpKey)) {
     return {
       map: cardTextureCache.get(mapKey)!,
@@ -918,7 +918,7 @@ export function getFeltTableTexture(renderer?: THREE.WebGLRenderer): {
 
   const grad = ctx.createRadialGradient(
     width * 0.5,
-    height * 0.46,
+    height * 0.5,
     80,
     width * 0.5,
     height * 0.5,
@@ -968,178 +968,126 @@ export function getFeltTableTexture(renderer?: THREE.WebGLRenderer): {
   const worldToU = (wx: number) => (wx / 9.6 + 0.5) * width;
   const worldToV = (wz: number) => (wz / 7.2 + 0.5) * height;
 
-  // =========================================================================
-  // 1. NORTH SIDE: ANDAR (DEALER'S SIDE) + SHOES + HUKAM PEDESTAL
-  // =========================================================================
-  const northArcY = worldToV(-3.15);
-  ctx.fillStyle = 'rgba(136, 19, 55, 0.24)';
-  ctx.beginPath();
-  ctx.arc(width / 2, northArcY - 40 * vScale, 395, 0, Math.PI, false);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(245, 158, 11, 0.75)';
-  ctx.lineWidth = 4.5;
-  ctx.stroke();
+  // Helper to draw a Seat Betting Bay on North or South side
+  const drawSeatBettingBay = (
+    wx: number,
+    wz: number,
+    title: string,
+    sub: string,
+    isCenter: boolean
+  ) => {
+    const sx = worldToU(wx);
+    const sy = worldToV(wz);
+    const boxW = 390;
+    const boxH = 185 * vScale;
 
-  ctx.font = '800 26px Georgia, serif';
-  ctx.fillStyle = '#fde68a';
-  ctx.textAlign = 'center';
-  ctx.fillText('♛  S E A T   A   •   N O R T H   B A N K E R   S T A T I O N  ♛', width / 2, worldToV(-2.72));
-
-  const northRowZ = worldToV(-1.68);
-  const deck1X = worldToU(-2.95);
-  const deck2X = worldToU(-1.68);
-  const dealerMatX = worldToU(0.18);
-  const hukamX = worldToU(2.68);
-
-  // 1st & 2nd Shoe Bays
-  ctx.strokeStyle = 'rgba(234, 179, 8, 0.6)';
-  ctx.lineWidth = 3.5;
-  drawRoundedRect(ctx, deck1X - 118, northRowZ - 165 * vScale, 236, 330 * vScale, 16);
-  ctx.stroke();
-  drawRoundedRect(ctx, deck2X - 118, northRowZ - 165 * vScale, 236, 330 * vScale, 16);
-  ctx.stroke();
-
-  ctx.font = '800 22px Georgia, serif';
-  ctx.fillStyle = '#fde68a';
-  ctx.fillText('1ST SHOE', deck1X, northRowZ - 182 * vScale);
-  ctx.fillText('2ND SHOE', deck2X, northRowZ - 182 * vScale);
-
-  // ANDAR • DEALER'S SIDE Card Mat in North-Center
-  const dMatW = 500;
-  const dMatH = 340 * vScale;
-  ctx.fillStyle = 'rgba(159, 18, 57, 0.18)';
-  drawRoundedRect(ctx, dealerMatX - dMatW / 2, northRowZ - dMatH / 2, dMatW, dMatH, 24);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(244, 63, 94, 0.82)';
-  ctx.lineWidth = 4.5;
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(251, 191, 36, 0.65)';
-  ctx.lineWidth = 2.5;
-  drawRoundedRect(
-    ctx,
-    dealerMatX - dMatW / 2 + 10,
-    northRowZ - dMatH / 2 + 10,
-    dMatW - 20,
-    dMatH - 20,
-    18
-  );
-  ctx.stroke();
-
-  ctx.font = '800 28px Georgia, serif';
-  ctx.fillStyle = '#fecdd3';
-  ctx.fillText("ANDAR • DEALER'S SIDE", dealerMatX, northRowZ - dMatH / 2 + 48);
-  ctx.font = '700 19px Georgia, serif';
-  ctx.fillStyle = 'rgba(253, 230, 138, 0.85)';
-  ctx.fillText('UNDER / DEALER MAT (2ND • 4TH • 6TH CARD)', dealerMatX, northRowZ + dMatH / 2 - 24);
-
-  // HUKAM Point Card Pedestal Ring in North-East
-  ctx.strokeStyle = 'rgba(234, 179, 8, 0.72)';
-  ctx.lineWidth = 4.5;
-  ctx.beginPath();
-  ctx.arc(hukamX, northRowZ, 195, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.font = '800 22px Georgia, serif';
-  ctx.fillStyle = '#fde68a';
-  ctx.fillText('HUKAM • POINT CARD', hukamX, northRowZ - 216 * vScale);
-
-  // =========================================================================
-  // 2. CENTER DIVIDER RIBBON
-  // =========================================================================
-  const midY = worldToV(-0.42);
-  ctx.strokeStyle = 'rgba(217, 167, 74, 0.55)';
-  ctx.lineWidth = 3.5;
-  ctx.beginPath();
-  ctx.moveTo(margin + 40, midY);
-  ctx.lineTo(width - margin - 40, midY);
-  ctx.stroke();
-
-  ctx.fillStyle = '#06331b';
-  ctx.beginPath();
-  ctx.arc(width / 2, midY, 28, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(217, 167, 74, 0.85)';
-  ctx.stroke();
-
-  ctx.font = '800 26px Georgia, serif';
-  ctx.fillStyle = 'rgba(253, 230, 138, 0.45)';
-  ctx.fillText(
-    '↺  A N T I - C L O C K W I S E   R I N G   ( A → B → C → D → E → F )  ↺',
-    width / 2,
-    midY - 20
-  );
-
-  // =========================================================================
-  // 3. SOUTH SIDE: BAHAR (CUTTER'S SIDE) MAT + SEATS B, C, D, E, F
-  // =========================================================================
-  const playerMatZ = worldToV(0.52);
-  const playerMatX = worldToU(0);
-  const pMatW = 660;
-  const pMatH = 320 * vScale;
-
-  ctx.fillStyle = 'rgba(14, 116, 144, 0.16)';
-  drawRoundedRect(ctx, playerMatX - pMatW / 2, playerMatZ - pMatH / 2, pMatW, pMatH, 24);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(56, 189, 248, 0.82)';
-  ctx.lineWidth = 4.5;
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(251, 191, 36, 0.65)';
-  ctx.lineWidth = 2.5;
-  drawRoundedRect(
-    ctx,
-    playerMatX - pMatW / 2 + 10,
-    playerMatZ - pMatH / 2 + 10,
-    pMatW - 20,
-    pMatH - 20,
-    18
-  );
-  ctx.stroke();
-
-  ctx.font = '800 28px Georgia, serif';
-  ctx.fillStyle = '#bae6fd';
-  ctx.fillText("BAHAR • CUTTER'S SIDE", playerMatX, playerMatZ - pMatH / 2 + 48);
-  ctx.font = '700 19px Georgia, serif';
-  ctx.fillStyle = 'rgba(253, 230, 138, 0.85)';
-  ctx.fillText('CUTTER MAT (1ST • 3RD • 5TH CARD)', playerMatX, playerMatZ + pMatH / 2 - 24);
-
-  // 3 South Betting Bays (Seats C, D, E)
-  const slots = [
-    { id: 1, wx: -2.65, wz: 2.18, title: 'SEAT C • BOT ARYAN', sub: 'ANTI-CLOCKWISE #3' },
-    { id: 2, wx: 0, wz: 2.32, title: 'SEAT D • YOU (VIP)', sub: 'ANTI-CLOCKWISE #4' },
-    { id: 3, wx: 2.65, wz: 2.18, title: 'SEAT E • BOT ZOYA', sub: 'ANTI-CLOCKWISE #5' },
-  ];
-
-  for (const s of slots) {
-    const sx = worldToU(s.wx);
-    const sy = worldToV(s.wz);
-    const boxW = 430;
-    const boxH = 230 * vScale;
-
-    ctx.fillStyle = s.id === 2 ? 'rgba(245, 158, 11, 0.14)' : 'rgba(6, 78, 59, 0.38)';
-    drawRoundedRect(ctx, sx - boxW / 2, sy - boxH / 2, boxW, boxH, 22);
+    ctx.fillStyle = isCenter ? 'rgba(245, 158, 11, 0.14)' : 'rgba(6, 78, 59, 0.36)';
+    drawRoundedRect(ctx, sx - boxW / 2, sy - boxH / 2, boxW, boxH, 20);
     ctx.fill();
 
-    ctx.strokeStyle = s.id === 2 ? 'rgba(251, 191, 36, 0.92)' : 'rgba(217, 167, 74, 0.68)';
-    ctx.lineWidth = s.id === 2 ? 5 : 3.5;
+    ctx.strokeStyle = isCenter ? 'rgba(251, 191, 36, 0.92)' : 'rgba(217, 167, 74, 0.68)';
+    ctx.lineWidth = isCenter ? 4.5 : 3.2;
     ctx.stroke();
 
-    // Inner dashed casino betting circle
+    // Inner dashed casino betting circle where active bet chips appear
     ctx.save();
     ctx.beginPath();
     ctx.setLineDash([10, 6]);
-    ctx.strokeStyle = 'rgba(253, 230, 138, 0.75)';
-    ctx.lineWidth = 2.8;
-    ctx.arc(sx, sy + 12 * vScale, 54, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(253, 230, 138, 0.78)';
+    ctx.lineWidth = 2.6;
+    ctx.arc(sx, sy, 48, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
 
-    ctx.font = '800 24px Georgia, serif';
-    ctx.fillStyle = s.id === 2 ? '#fde68a' : '#fef08a';
-    ctx.fillText(s.title, sx, sy - boxH / 2 + 38);
+    ctx.textAlign = 'center';
+    ctx.font = '800 22px Georgia, serif';
+    ctx.fillStyle = isCenter ? '#fde68a' : '#fef08a';
+    ctx.fillText(title, sx, sy - boxH / 2 + 32);
 
-    ctx.font = '700 17px Georgia, serif';
-    ctx.fillStyle = 'rgba(226, 232, 240, 0.82)';
-    ctx.fillText(s.sub, sx, sy + boxH / 2 - 20);
-  }
+    ctx.font = '700 15px Georgia, serif';
+    ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
+    ctx.fillText(sub, sx, sy + boxH / 2 - 16);
+  };
+
+  // =========================================================================
+  // 1. NORTH SIDE: 3 PLAYER BETTING BAYS (SEAT B, SEAT A, SEAT F)
+  // =========================================================================
+  drawSeatBettingBay(-2.75, -2.35, 'SEAT B • KABIR', 'NORTH-WEST BAY', false);
+  drawSeatBettingBay(0, -2.42, 'SEAT A • NAWAB', 'NORTH-CENTER BAY', true);
+  drawSeatBettingBay(2.75, -2.35, 'SEAT F • REHAN', 'NORTH-EAST BAY', false);
+
+  // =========================================================================
+  // 2. MIDDLE OF TABLE: CARD SYSTEM (SHOES + ANDAR & BAHAR MATS + HUKAM)
+  // =========================================================================
+  const midCenterZ = worldToV(0.0);
+  const deck1X = worldToU(-2.95);
+  const deck2X = worldToU(-1.68);
+  const cardMatX = worldToU(0.18);
+  const hukamX = worldToU(2.68);
+
+  // 1st & 2nd Shoe Bays in the Middle-Left
+  ctx.strokeStyle = 'rgba(234, 179, 8, 0.65)';
+  ctx.lineWidth = 3.5;
+  drawRoundedRect(ctx, deck1X - 118, midCenterZ - 160 * vScale, 236, 320 * vScale, 16);
+  ctx.stroke();
+  drawRoundedRect(ctx, deck2X - 118, midCenterZ - 160 * vScale, 236, 320 * vScale, 16);
+  ctx.stroke();
+
+  ctx.font = '800 21px Georgia, serif';
+  ctx.fillStyle = '#fde68a';
+  ctx.fillText('1ST SHOE', deck1X, midCenterZ - 176 * vScale);
+  ctx.fillText('2ND SHOE', deck2X, midCenterZ - 176 * vScale);
+
+  // Upper-Middle Card Mat: ANDAR • UNDER (SHUFFLER'S SIDE) at z = -0.68
+  const andarMatZ = worldToV(-0.68);
+  const cMatW = 500;
+  const cMatH = 265 * vScale;
+  ctx.fillStyle = 'rgba(159, 18, 57, 0.2)';
+  drawRoundedRect(ctx, cardMatX - cMatW / 2, andarMatZ - cMatH / 2, cMatW, cMatH, 22);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(244, 63, 94, 0.85)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  ctx.font = '800 25px Georgia, serif';
+  ctx.fillStyle = '#fecdd3';
+  ctx.fillText('ANDAR • UNDER (SHUFFLER)', cardMatX, andarMatZ - cMatH / 2 + 40);
+  ctx.font = '700 17px Georgia, serif';
+  ctx.fillStyle = 'rgba(253, 230, 138, 0.85)';
+  ctx.fillText('2ND • 4TH • 6TH CARD', cardMatX, andarMatZ + cMatH / 2 - 18);
+
+  // Lower-Middle Card Mat: BAHAR • CUTTER'S SIDE at z = +0.68
+  const baharMatZ = worldToV(0.68);
+  ctx.fillStyle = 'rgba(14, 116, 144, 0.2)';
+  drawRoundedRect(ctx, cardMatX - cMatW / 2, baharMatZ - cMatH / 2, cMatW, cMatH, 22);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  ctx.font = '800 25px Georgia, serif';
+  ctx.fillStyle = '#bae6fd';
+  ctx.fillText("BAHAR • CUTTER'S SIDE", cardMatX, baharMatZ - cMatH / 2 + 40);
+  ctx.font = '700 17px Georgia, serif';
+  ctx.fillStyle = 'rgba(253, 230, 138, 0.85)';
+  ctx.fillText('1ST • 3RD • 5TH CARD', cardMatX, baharMatZ + cMatH / 2 - 18);
+
+  // HUKAM Point Card Pedestal Ring in Middle-Right (z = 0.0)
+  ctx.strokeStyle = 'rgba(234, 179, 8, 0.75)';
+  ctx.lineWidth = 4.5;
+  ctx.beginPath();
+  ctx.arc(hukamX, midCenterZ, 190, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.font = '800 21px Georgia, serif';
+  ctx.fillStyle = '#fde68a';
+  ctx.fillText('HUKAM • POINT CARD', hukamX, midCenterZ - 210 * vScale);
+
+  // =========================================================================
+  // 3. SOUTH SIDE: 3 PLAYER BETTING BAYS (SEAT C, SEAT D, SEAT E)
+  // =========================================================================
+  drawSeatBettingBay(-2.75, 2.35, 'SEAT C • ARYAN', 'SOUTH-WEST BAY', false);
+  drawSeatBettingBay(0, 2.42, 'SEAT D • YOU (VIP)', 'SOUTH-CENTER BAY', true);
+  drawSeatBettingBay(2.75, 2.35, 'SEAT E • ZOYA', 'SOUTH-EAST BAY', false);
 
   const bumpCanvas = document.createElement('canvas');
   bumpCanvas.width = 256;

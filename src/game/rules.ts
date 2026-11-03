@@ -1,4 +1,15 @@
-import { Card, Participant, Rank, SEAT_ORDER, SeatId, SeatInfo, Side, SplitResult, Suit } from './types';
+import {
+  Card,
+  INITIAL_SEAT_COINS,
+  Participant,
+  Rank,
+  SEAT_ORDER,
+  SeatId,
+  SeatInfo,
+  Side,
+  SplitResult,
+  Suit,
+} from './types';
 
 export const SUITS: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
 
@@ -25,6 +36,8 @@ export const RANKS: Rank[] = [
   'K',
 ];
 
+export const CHIP_VALUES = [50, 100, 250, 500] as const;
+
 export const DEFAULT_SEAT_NAMES: Record<SeatId, { name: string; shortName: string }> = {
   A: { name: 'Bot Nawab', shortName: 'Nawab' },
   B: { name: 'Bot Kabir', shortName: 'Kabir' },
@@ -36,7 +49,7 @@ export const DEFAULT_SEAT_NAMES: Record<SeatId, { name: string; shortName: strin
 
 /**
  * Generates the initial 6 seats (A, B, C, D, E, F) around the table in anti-clockwise order.
- * By default, Seat D (South Center VIP) is the human user and the other 5 seats are Bots.
+ * Each seat starts with INITIAL_SEAT_COINS (1,000 RC) -> Total Table Pool = 6,000 RC constant.
  */
 export function createInitialSeats(humanSeat: SeatId = 'D'): SeatInfo[] {
   return SEAT_ORDER.map((id) => {
@@ -46,10 +59,170 @@ export function createInitialSeats(humanSeat: SeatId = 'D'): SeatInfo[] {
       name: isHuman ? 'You' : DEFAULT_SEAT_NAMES[id].name,
       shortName: isHuman ? 'You' : DEFAULT_SEAT_NAMES[id].shortName,
       isHuman,
+      balance: INITIAL_SEAT_COINS,
       betAmount: 0,
       betSide: null,
     };
   });
+}
+
+/**
+ * Resets bet amounts/sides for a new round while preserving every seat's exact balance.
+ * If any seat dropped below 50 RC, transfers a 150 RC stake from the richest seat so the
+ * total currency across all 6 seats remains strictly constant (6,000 RC).
+ */
+export function prepareSeatsForNextRound(
+  currentSeats: readonly SeatInfo[],
+  humanSeat: SeatId
+): SeatInfo[] {
+  const balances: Record<SeatId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 };
+  for (const s of currentSeats) {
+    balances[s.id] = s.balance;
+  }
+
+  for (const id of SEAT_ORDER) {
+    if (balances[id] < 50) {
+      // Find richest seat to transfer 150 RC from so total currency stays 100% constant
+      let richest: SeatId = 'A';
+      for (const candidate of SEAT_ORDER) {
+        if (balances[candidate] > balances[richest]) {
+          richest = candidate;
+        }
+      }
+      const transfer = Math.min(150, Math.max(0, balances[richest] - 200));
+      balances[richest] -= transfer;
+      balances[id] += transfer;
+    }
+  }
+
+  return SEAT_ORDER.map((id) => {
+    const isHuman = id === humanSeat;
+    return {
+      id,
+      name: isHuman ? 'You' : DEFAULT_SEAT_NAMES[id].name,
+      shortName: isHuman ? 'You' : DEFAULT_SEAT_NAMES[id].shortName,
+      isHuman,
+      balance: balances[id],
+      betAmount: 0,
+      betSide: null,
+    };
+  });
+}
+
+/**
+ * Picks a random chip bet amount (50, 100, 250, 500 RC) bounded by the seat's available balance.
+ */
+export function generateRandomWager(
+  availableBalance: number,
+  rng: () => number = Math.random
+): number {
+  if (availableBalance <= 0) return 0;
+  const affordable = CHIP_VALUES.filter((v) => v <= availableBalance);
+  if (affordable.length === 0) return availableBalance;
+  return affordable[Math.floor(rng() * affordable.length)];
+}
+
+/**
+ * Rule 1 & Rule 2:
+ * - If `isCutter === true`, the Cutter is ALWAYS locked to `'player'` (Bahar / Cutter's Side)
+ *   because the Cutter is the main opponent of the Under (Shuffler/Dealer).
+ * - Other players randomly choose between `'dealer'` (Under/Andar) and `'player'` (Bahar/Cutter).
+ * - Every bot bets a random amount from their available balance.
+ */
+export function generateBotBet(
+  seatId: SeatId,
+  isCutter: boolean,
+  availableBalance: number = INITIAL_SEAT_COINS,
+  rng: () => number = Math.random
+): { betSide: Side; betAmount: number } {
+  void seatId;
+  const betAmount = generateRandomWager(availableBalance, rng);
+
+  if (isCutter) {
+    // Rule 1: Cutter is ALWAYS Bahar ('player') — never Andar!
+    return { betSide: 'player', betAmount };
+  }
+
+  const betSide: Side = rng() < 0.5 ? 'player' : 'dealer';
+  return { betSide, betAmount };
+}
+
+/**
+ * Rule 2: Zero-Sum / Constant-Currency Settlement across all 6 players (A..F).
+ * - The Dealer (`dealerSeat`) banks the hand against all bettors.
+ * - Bettors whose `betSide !== winningSide` lose their wager to the Dealer.
+ * - Bettors whose `betSide === winningSide` win their wager from the Dealer (capped proportionally
+ *   by the Dealer's available stack so no balance ever goes negative and the sum of all 6 balances
+ *   remains strictly constant!).
+ */
+export function settleConstantCurrencyRound(
+  seats: readonly SeatInfo[],
+  dealerSeat: SeatId,
+  winningSide: Side
+): {
+  updatedSeats: SeatInfo[];
+  deltas: Record<SeatId, number>;
+  totalPool: number;
+} {
+  const balances: Record<SeatId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 };
+  const initialBalances: Record<SeatId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 };
+
+  for (const s of seats) {
+    balances[s.id] = s.balance;
+    initialBalances[s.id] = s.balance;
+  }
+
+  // Step 1: Collect losing bets into the Dealer's balance
+  const winners: Array<{ id: SeatId; claim: number }> = [];
+  for (const s of seats) {
+    if (s.id === dealerSeat || !s.betSide || s.betAmount <= 0) continue;
+    const wager = Math.min(s.betAmount, balances[s.id]);
+    if (s.betSide !== winningSide) {
+      balances[s.id] -= wager;
+      balances[dealerSeat] += wager;
+    } else {
+      winners.push({ id: s.id, claim: wager });
+    }
+  }
+
+  // Step 2: Dealer pays out winning bets (conserving total coins 100%)
+  const totalClaims = winners.reduce((acc, w) => acc + w.claim, 0);
+  if (totalClaims > 0 && balances[dealerSeat] > 0) {
+    if (balances[dealerSeat] >= totalClaims) {
+      for (const w of winners) {
+        balances[dealerSeat] -= w.claim;
+        balances[w.id] += w.claim;
+      }
+    } else {
+      // Proportional payout of Dealer's entire remaining balance so sum stays exact
+      const available = balances[dealerSeat];
+      let distributed = 0;
+      for (let i = 0; i < winners.length; i++) {
+        const w = winners[i];
+        const share =
+          i === winners.length - 1
+            ? available - distributed
+            : Math.floor((available * w.claim) / totalClaims);
+        balances[w.id] += share;
+        distributed += share;
+      }
+      balances[dealerSeat] = 0;
+    }
+  }
+
+  const deltas: Record<SeatId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 };
+  let totalPool = 0;
+  for (const id of SEAT_ORDER) {
+    deltas[id] = balances[id] - initialBalances[id];
+    totalPool += balances[id];
+  }
+
+  const updatedSeats = seats.map((s) => ({
+    ...s,
+    balance: balances[s.id],
+  }));
+
+  return { updatedSeats, deltas, totalPool };
 }
 
 /**
@@ -102,30 +275,6 @@ export function getBettingOrder(dealerSeat: SeatId, cutterSeat: SeatId): SeatId[
 }
 
 /**
- * Generates an automatic bot wager and side choice ('dealer' = Andar/Dealer side, 'player' = Bahar/Cutter side).
- * The Cutter tends to favor Cutter's side (Bahar), while other bots freely bet on either
- * Under/Dealer's side or Bahar/Cutter's side.
- */
-export function generateBotBet(
-  seatId: SeatId,
-  isCutter: boolean,
-  rng: () => number = Math.random
-): { betSide: Side; betAmount: number } {
-  const denoms = [50, 100, 250, 500];
-  const betAmount = denoms[Math.floor(rng() * denoms.length)];
-  void seatId;
-
-  if (isCutter) {
-    // Cutter backs Cutter's side (Bahar) 80% of the time, or Under/Dealer's side 20%
-    const betSide: Side = rng() < 0.8 ? 'player' : 'dealer';
-    return { betSide, betAmount };
-  }
-
-  const betSide: Side = rng() < 0.5 ? 'player' : 'dealer';
-  return { betSide, betAmount };
-}
-
-/**
  * Rule 4: Bots auto-deal at their own natural pace ("as they like"), between 250ms and 430ms.
  */
 export function generateBotDealDelayMs(rng: () => number = Math.random): number {
@@ -136,12 +285,12 @@ export function generateBotDealDelayMs(rng: () => number = Math.random): number 
  * Generates a fresh 52-card standard deck.
  */
 export function createStandardDeck(): Card[] {
-  const deck: Card[] = [];
+  const cards: Card[] = [];
   for (const suit of SUITS) {
     const sym = SUIT_SYMBOLS[suit];
     for (const rank of RANKS) {
       const isRed = suit === 'hearts' || suit === 'diamonds';
-      deck.push({
+      cards.push({
         id: `${rank}_${suit}`,
         suit,
         rank,
@@ -150,7 +299,7 @@ export function createStandardDeck(): Card[] {
       });
     }
   }
-  return deck;
+  return cards;
 }
 
 /**
@@ -201,7 +350,7 @@ export function isWinningCard(dealtCard: Card, pointCard: Card): boolean {
 /**
  * Determines which table zone receives the card for a 0-indexed turn count.
  * Turn 0 (1st card), 2 (3rd card), 4... -> 'player' (Bahar / Cutter's Side mat)
- * Turn 1 (2nd card), 3 (4th card), 5... -> 'dealer' (Andar / Dealer's Side mat)
+ * Turn 1 (2nd card), 3 (4th card), 5... -> 'dealer' (Andar / Under Shuffler's Side mat)
  */
 export function getReceivingSide(turnIndex: number): Side {
   return turnIndex % 2 === 0 ? 'player' : 'dealer';

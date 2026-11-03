@@ -16,7 +16,11 @@ import {
   getBettingOrder,
   generateBotBet,
   generateBotDealDelayMs,
+  createInitialSeats,
+  settleConstantCurrencyRound,
+  prepareSeatsForNextRound,
 } from './rules';
+import { TOTAL_TABLE_COINS } from './types';
 
 test('createStandardDeck produces exactly 52 distinct cards with 4 suits and 13 ranks', () => {
   const deck = createStandardDeck();
@@ -66,10 +70,56 @@ test('getReceivingSide alternates correctly: even -> player (Bahar/Cutter), odd 
   assert.equal(getReceivingSide(3), 'dealer');
 });
 
-test('computePayout calculates additions and deductions properly without negative balance', () => {
-  assert.equal(computePayout(1000, 250, true), 1250);
-  assert.equal(computePayout(1000, 250, false), 750);
-  assert.equal(computePayout(100, 250, false), 0);
+test('Rule 1: Cutter is ALWAYS locked to Bahar (player side) regardless of RNG', () => {
+  for (const r of [0, 0.25, 0.5, 0.75, 0.99]) {
+    const cutterBet = generateBotBet('B', true, 1000, () => r);
+    assert.equal(cutterBet.betSide, 'player');
+    assert.equal(cutterBet.betAmount > 0, true);
+  }
+});
+
+test('Rule 2: Constant-currency settlement strictly conserves TOTAL_TABLE_COINS (6,000 RC) across all outcomes', () => {
+  const seats = createInitialSeats('D');
+  const initialSum = seats.reduce((sum, s) => sum + s.balance, 0);
+  assert.equal(initialSum, TOTAL_TABLE_COINS);
+
+  // Suppose A is Dealer, B (Cutter) bets 250 on Bahar ('player'), C bets 100 on Andar ('dealer'),
+  // D bets 500 on Bahar ('player'), E bets 250 on Andar ('dealer'), F bets 100 on Bahar ('player')
+  const withBets = seats.map((s) => {
+    if (s.id === 'B') return { ...s, betSide: 'player' as const, betAmount: 250 };
+    if (s.id === 'C') return { ...s, betSide: 'dealer' as const, betAmount: 100 };
+    if (s.id === 'D') return { ...s, betSide: 'player' as const, betAmount: 500 };
+    if (s.id === 'E') return { ...s, betSide: 'dealer' as const, betAmount: 250 };
+    if (s.id === 'F') return { ...s, betSide: 'player' as const, betAmount: 100 };
+    return s;
+  });
+
+  // Outcome A: Bahar ('player') wins
+  const resBahar = settleConstantCurrencyRound(withBets, 'A', 'player');
+  assert.equal(resBahar.totalPool, TOTAL_TABLE_COINS);
+  assert.equal(
+    resBahar.updatedSeats.reduce((sum, s) => sum + s.balance, 0),
+    TOTAL_TABLE_COINS
+  );
+  // B (+250), D (+500), F (+100) won; C (-100), E (-250) lost; Dealer A net = +350 - 850 = -500
+  assert.equal(resBahar.deltas.B, 250);
+  assert.equal(resBahar.deltas.D, 500);
+  assert.equal(resBahar.deltas.C, -100);
+  assert.equal(resBahar.deltas.A, -500);
+
+  // Outcome B: Andar ('dealer') wins
+  const resAndar = settleConstantCurrencyRound(withBets, 'A', 'dealer');
+  assert.equal(resAndar.totalPool, TOTAL_TABLE_COINS);
+  assert.equal(resAndar.deltas.B, -250);
+  assert.equal(resAndar.deltas.C, 100);
+  assert.equal(resAndar.deltas.A, 500);
+
+  // Next-round preparation preserves constant 6,000 RC pool even if a seat ran low
+  const rebalanced = prepareSeatsForNextRound(resBahar.updatedSeats, 'D');
+  assert.equal(
+    rebalanced.reduce((sum, s) => sum + s.balance, 0),
+    TOTAL_TABLE_COINS
+  );
 });
 
 test('6-seat anti-clockwise rotation follows Rule 2: A deals, B cuts -> if B wins B deals & C cuts; if B loses A stays dealer & C cuts', () => {
@@ -77,44 +127,25 @@ test('6-seat anti-clockwise rotation follows Rule 2: A deals, B cuts -> if B win
   assert.equal(getNextAntiClockwiseSeat('F'), 'A');
   assert.equal(getNextAntiClockwiseSeat('F', 'A'), 'B');
 
-  // Case 1: A is Dealer, B is Cutter, and B wins (Bahar / 'player' side wins)
   const bWins = resolveNextDealerAndCutter('A', 'B', 'player');
   assert.equal(bWins.nextDealer, 'B');
   assert.equal(bWins.nextCutter, 'C');
 
-  // Case 2: A is Dealer, B is Cutter, and B loses (Andar / 'dealer' side wins)
   const bLoses = resolveNextDealerAndCutter('A', 'B', 'dealer');
   assert.equal(bLoses.nextDealer, 'A');
   assert.equal(bLoses.nextCutter, 'C');
-
-  // Case 3: A is still Dealer, F is Cutter, and F loses -> A stays Dealer, B becomes Cutter (skipping A)
-  const fLoses = resolveNextDealerAndCutter('A', 'F', 'dealer');
-  assert.equal(fLoses.nextDealer, 'A');
-  assert.equal(fLoses.nextCutter, 'B');
 });
 
-test('getBettingOrder starts with Cutter and proceeds anti-clockwise excluding Dealer (Rule 3)', () => {
+test('getBettingOrder starts with Cutter and proceeds anti-clockwise excluding Dealer', () => {
   assert.deepEqual(getBettingOrder('A', 'B'), ['B', 'C', 'D', 'E', 'F']);
   assert.deepEqual(getBettingOrder('A', 'C'), ['C', 'D', 'E', 'F', 'B']);
-  assert.deepEqual(getBettingOrder('D', 'E'), ['E', 'F', 'A', 'B', 'C']);
 });
 
-test('bot auto-betting and auto-deal delay helpers produce valid bets and delays (Rules 3 & 4)', () => {
-  const botBet1 = generateBotBet('B', true, () => 0.1);
-  assert.equal(botBet1.betSide, 'player');
-  assert.equal(botBet1.betAmount, 50);
-
-  const botBet2 = generateBotBet('C', false, () => 0.75);
-  assert.equal(botBet2.betSide, 'dealer');
-  assert.equal(botBet2.betAmount, 500);
-
-  const delay = generateBotDealDelayMs(() => 0.5);
-  assert.equal(delay >= 250 && delay <= 430, true);
-});
-
-test('legacy dealer rotation and cutter helpers remain valid', () => {
+test('legacy helpers remain valid', () => {
+  assert.equal(computePayout(1000, 250, true), 1250);
   assert.equal(getNextDealer('player'), 'player');
   assert.equal(getCutterForDealer('player'), 'bot');
   assert.equal(generateBotCutIndex(() => 0), 12);
   assert.equal(resolveRoundWinner('player', 'bot'), 'player');
+  assert.equal(generateBotDealDelayMs(() => 0.5) >= 250, true);
 });

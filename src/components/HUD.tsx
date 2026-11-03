@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, GameStats, SeatId, SeatInfo } from '../game/types';
-import { Volume2, VolumeX, Pause, Crown, Scissors } from 'lucide-react';
+import { Volume2, VolumeX, Pause, Crown, Scissors, Coins } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface HUDProps {
@@ -37,6 +37,7 @@ export const HUD: React.FC<HUDProps> = ({
 }) => {
   const dealerIsYou = dealerSeat === humanSeat;
   const cutterIsYou = cutterSeat === humanSeat;
+  const totalPool = seats.reduce((sum, s) => sum + s.balance, 0);
 
   return (
     <div className="fixed inset-x-0 top-0 pointer-events-none z-20 flex flex-col p-2 sm:p-3 select-none">
@@ -63,16 +64,20 @@ export const HUD: React.FC<HUDProps> = ({
                   ROYAL KATTI
                 </h2>
                 <span className="hidden sm:inline-block text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-500/40 uppercase tracking-wider shrink-0">
-                  👑 Dealer: {dealerSeat} {dealerIsYou ? '(You)' : ''}
+                  👑 Under: {dealerSeat} {dealerIsYou ? '(You)' : ''}
                 </span>
                 <span className="hidden sm:inline-block text-[9px] font-black px-1.5 py-0.5 rounded bg-sky-950/90 text-sky-300 border border-sky-400/40 uppercase tracking-wider shrink-0">
-                  ✂️ Cutter: {cutterSeat} {cutterIsYou ? '(You)' : ''}
+                  ✂️ Bahar: {cutterSeat} {cutterIsYou ? '(You)' : ''}
+                </span>
+                <span className="hidden md:inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 uppercase tracking-wider shrink-0">
+                  <Coins className="w-2.5 h-2.5" />
+                  Pool: {totalPool.toLocaleString()} RC
                 </span>
               </div>
               <p className="text-[9px] sm:text-[10px] font-bold tracking-wider leading-tight text-slate-200 truncate mt-0.5">
-                <span className="text-amber-300">👑 {dealerSeat} Deals</span>
+                <span className="text-amber-300">👑 {dealerSeat} Shuffles (Under)</span>
                 <span className="mx-1 text-slate-500">•</span>
-                <span className="text-sky-300">✂️ {cutterSeat} Cuts</span>
+                <span className="text-sky-300">✂️ {cutterSeat} Cuts (Bahar)</span>
                 {pointCard && (
                   <span className="text-amber-300 font-black ml-1.5">
                     • Hukam: {pointCard.label}
@@ -92,23 +97,23 @@ export const HUD: React.FC<HUDProps> = ({
               </div>
             )}
 
-            {/* Bet Readout */}
+            {/* Bet Readout (Fake Currency: RC) */}
             <div className="bg-slate-950/90 border border-amber-500/30 rounded-lg px-2 py-0.5 sm:px-2.5 sm:py-1 text-right">
               <span className="block text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">
-                YOUR BET
+                YOUR WAGER
               </span>
               <span className="text-[11px] sm:text-xs font-black text-amber-300 tabular-nums">
-                ₹{currentBet}
+                {currentBet} RC
               </span>
             </div>
 
-            {/* Balance Readout */}
+            {/* Balance Readout (Fake Currency: RC) */}
             <div className="bg-slate-950/90 border border-amber-400/60 rounded-lg px-2 py-0.5 sm:px-3 sm:py-1 text-right">
               <span className="block text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">
-                BALANCE
+                ROYAL COINS
               </span>
               <span className="text-[11px] sm:text-xs font-black text-emerald-400 tabular-nums">
-                ₹{balance.toLocaleString()}
+                {balance.toLocaleString()} RC
               </span>
             </div>
 
@@ -154,18 +159,18 @@ export const HUD: React.FC<HUDProps> = ({
             const isActiveTurn = s.id === activeActorSeat;
             const betBadge =
               !isDealer && s.betSide
-                ? `${s.betSide === 'dealer' ? 'ANDAR' : 'BAHAR'} ₹${s.betAmount}`
+                ? `${s.betSide === 'dealer' ? 'ANDAR' : 'BAHAR'} ${s.betAmount} RC`
                 : isDealer
-                ? 'DEALER'
+                ? 'UNDER • BANK'
                 : isCutter
-                ? 'CUTTER'
-                : 'WAITING';
+                ? 'BAHAR • CUT'
+                : `${s.balance} RC`;
 
             return (
               <button
                 key={s.id}
                 onClick={() => onSelectHumanSeat(s.id)}
-                title={`Sit at Seat ${s.id}`}
+                title={`Sit at Seat ${s.id} (${s.balance} RC)`}
                 className={`flex flex-col items-center justify-center rounded-lg px-1 py-1 border text-center transition-all cursor-pointer ${
                   isActiveTurn
                     ? 'bg-amber-500/25 border-amber-300 ring-1 ring-amber-300'
@@ -205,7 +210,7 @@ export const HUD: React.FC<HUDProps> = ({
                       ? 'text-amber-300'
                       : isCutter
                       ? 'text-sky-200'
-                      : 'text-slate-400'
+                      : 'text-slate-300'
                   }`}
                 >
                   {betBadge}

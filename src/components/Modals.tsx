@@ -13,6 +13,7 @@ interface RoundOverModalProps {
   matchingCard: Card;
   pointCard: Card;
   betAmount: number;
+  humanDelta: number;
   totalCardsDealt: number;
   stats: GameStats;
   onNextRound: () => void;
@@ -29,11 +30,12 @@ export const RoundOverModal: React.FC<RoundOverModalProps> = ({
   matchingCard,
   pointCard,
   betAmount,
+  humanDelta,
   totalCardsDealt,
-  stats,
   onNextRound,
 }) => {
   const cutterWon = winner === 'player';
+  const absDelta = Math.abs(humanDelta) || betAmount;
 
   return (
     <div className="fixed bottom-2.5 left-1/2 -translate-x-1/2 z-30 w-full max-w-md px-3 pointer-events-none select-none animate-fadeIn">
@@ -44,7 +46,7 @@ export const RoundOverModal: React.FC<RoundOverModalProps> = ({
             : 'bg-slate-950/45 border-rose-400/65 shadow-[0_0_28px_rgba(244,63,94,0.25)]'
         }`}
       >
-        {/* Top Row: Win/Loss Headline + Payout Badge */}
+        {/* Top Row: Win/Loss Headline + Payout Badge in Fake Currency (RC) */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
             <div
@@ -64,18 +66,18 @@ export const RoundOverModal: React.FC<RoundOverModalProps> = ({
               >
                 {cutterWon
                   ? `CUTTER (${prevCutter}) WINS BAHAR!`
-                  : `DEALER (${prevDealer}) WINS ANDAR!`}
+                  : `UNDER (${prevDealer}) WINS ANDAR!`}
               </h2>
               <p className="text-[11px] text-slate-200/90 font-semibold">
                 Matched <span className="font-black text-amber-300">{matchingCard.label}</span> on{' '}
                 <span className="font-bold text-white">
-                  {cutterWon ? "Bahar (Cutter's Side)" : "Andar (Dealer's Side)"}
+                  {cutterWon ? "Bahar (Cutter's Side)" : "Andar (Under / Shuffler's Side)"}
                 </span>
               </p>
             </div>
           </div>
 
-          {/* Translucent Payout Pill */}
+          {/* Translucent Payout Pill (RC) */}
           <div
             className={`px-3 py-1.5 rounded-xl border font-black text-sm sm:text-base tabular-nums shrink-0 ${
               playerWon
@@ -83,16 +85,16 @@ export const RoundOverModal: React.FC<RoundOverModalProps> = ({
                 : 'bg-rose-950/55 border-rose-400/50 text-rose-300'
             }`}
           >
-            {playerWon ? `+₹${betAmount.toLocaleString()}` : `-₹${betAmount.toLocaleString()}`}
+            {playerWon ? `+${absDelta.toLocaleString()} RC` : `-${absDelta.toLocaleString()} RC`}
           </div>
         </div>
 
-        {/* Anti-Clockwise Rotation Banner (Rule 2) */}
+        {/* Anti-Clockwise Rotation Banner */}
         <div className="flex items-center justify-between gap-1.5 bg-slate-900/55 border border-amber-400/30 rounded-xl px-3 py-1.5 text-[11px] text-slate-100">
           <span className="flex items-center gap-1 font-extrabold text-amber-300">
             <Crown className="w-3.5 h-3.5" />
             <span>
-              Next Dealer: {nextDealer} {nextDealer === humanSeat ? '(YOU)' : ''}
+              Next Under: {nextDealer} {nextDealer === humanSeat ? '(YOU)' : ''}
             </span>
           </span>
           <span className="text-slate-400">↺</span>
@@ -116,7 +118,7 @@ export const RoundOverModal: React.FC<RoundOverModalProps> = ({
         >
           <RotateCcw className="w-4 h-4" />
           <span>
-            CONTINUE ANTI-CLOCKWISE ROUND ({nextDealer} DEALS → {nextCutter} CUTS)
+            CONTINUE ANTI-CLOCKWISE ROUND ({nextDealer} SHUFFLES → {nextCutter} CUTS)
           </span>
         </button>
       </div>
@@ -136,7 +138,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({ onResume, onRestart, onT
       <div className="w-full max-w-sm rounded-2xl bg-slate-900/80 backdrop-blur-md border border-amber-500/40 p-6 shadow-2xl flex flex-col gap-4 text-center">
         <h2 className="text-2xl font-black text-amber-300 tracking-wider">GAME PAUSED</h2>
         <p className="text-xs text-slate-300 font-medium">
-          Maang Patta high-roller royal table is on standby.
+          Maang Patta Royal Coins 6-Seat Table is on standby.
         </p>
 
         <div className="flex flex-col gap-2.5 mt-2">

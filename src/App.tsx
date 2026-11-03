@@ -5,6 +5,7 @@ import {
   CameraView,
   GamePhase,
   GameStats,
+  INITIAL_SEAT_COINS,
   SeatId,
   SeatInfo,
   Side,
@@ -15,12 +16,14 @@ import {
   splitDeck,
   isWinningCard,
   getReceivingSide,
-  computePayout,
   generateBotCutIndex,
   createInitialSeats,
+  prepareSeatsForNextRound,
   resolveNextDealerAndCutter,
   getBettingOrder,
   generateBotBet,
+  generateRandomWager,
+  settleConstantCurrencyRound,
   generateBotDealDelayMs,
 } from './game/rules';
 import { soundEngine } from './game/audio';
@@ -41,7 +44,7 @@ export default function App() {
   const [botFastMode, setBotFastMode] = useState(false);
 
   // 6-Player Anti-Clockwise Ring State (A -> B -> C -> D -> E -> F)
-  // Rule 2: First A is Dealer, and B is Cutter!
+  // First A is Dealer (Under/Shuffler), and B is Cutter (Bahar)!
   const [humanSeat, setHumanSeat] = useState<SeatId>('D');
   const [dealerSeat, setDealerSeat] = useState<SeatId>('A');
   const [cutterSeat, setCutterSeat] = useState<SeatId>('B');
@@ -59,12 +62,13 @@ export default function App() {
   const [dealerCards, setDealerCards] = useState<Card[]>([]);
   const [turnIndex, setTurnIndex] = useState(0);
 
-  // Betting & Cut controls
-  const [balance, setBalance] = useState(1000);
+  // Betting & Cut controls (Fake Currency: RC = Royal Coins)
+  const [balance, setBalance] = useState(INITIAL_SEAT_COINS);
   const [currentBet, setCurrentBet] = useState(100);
+  const [humanDelta, setHumanDelta] = useState(100);
   const [cutIndex, setCutIndex] = useState(26);
   const [statusText, setStatusText] = useState(
-    'Seat A (Dealer) shuffles → Seat B (Cutter) cuts first!'
+    'Seat A (Under) shuffles → Seat B (Cutter) cuts first!'
   );
 
   // Auto Deal states
@@ -81,7 +85,7 @@ export default function App() {
     totalRounds: 0,
     playerWins: 0,
     dealerWins: 0,
-    highestBalance: 1000,
+    highestBalance: INITIAL_SEAT_COINS,
     totalWagered: 0,
     currentStreak: 0,
     bestStreak: 0,
@@ -183,7 +187,7 @@ export default function App() {
     }
 
     const currentTurn = turnIndexRef.current;
-    const toSide = getReceivingSide(currentTurn); // 0, 2, 4 -> 'player' (Bahar/Cutter); 1, 3, 5 -> 'dealer' (Andar/Dealer)
+    const toSide = getReceivingSide(currentTurn); // 0, 2, 4 -> 'player' (Bahar/Cutter); 1, 3, 5 -> 'dealer' (Andar/Under)
     const isMatch = isWinningCard(drawnCard, pointCardRef.current);
 
     setTurnIndex(currentTurn + 1);
@@ -211,28 +215,46 @@ export default function App() {
       setPrevDealerSeat(dSeat);
       setPrevCutterSeat(cSeat);
 
-      // Rule 2: Anti-clockwise rotation based on whether Cutter ('player' / Bahar) won or lost!
+      // Rule 2: Settle constant-sum currency across all 6 players (Total Pool remains 6,000 RC!)
+      const prevHumanSeatObj = seatsRef.current.find((s) => s.id === humanSeatRef.current);
+      const prevHumanBal = prevHumanSeatObj ? prevHumanSeatObj.balance : balanceRef.current;
+
+      const { updatedSeats: settledSeats, deltas } = settleConstantCurrencyRound(
+        seatsRef.current,
+        dSeat,
+        toSide
+      );
+      setSeats(settledSeats);
+      seatsRef.current = settledSeats;
+
+      const nextHumanSeatObj = settledSeats.find((s) => s.id === humanSeatRef.current);
+      const newBalance = nextHumanSeatObj ? nextHumanSeatObj.balance : prevHumanBal;
+      const delta = deltas[humanSeatRef.current] ?? newBalance - prevHumanBal;
+      setHumanDelta(delta);
+      setBalance(newBalance);
+      balanceRef.current = newBalance;
+
+      // Determine if the human player won their bet (or won as Under/Dealer)
+      let humanWon = delta > 0;
+      if (delta === 0) {
+        if (dSeat === humanSeatRef.current) {
+          humanWon = toSide === 'dealer';
+        } else if (prevHumanSeatObj?.betSide) {
+          humanWon = prevHumanSeatObj.betSide === toSide;
+        } else {
+          humanWon = toSide === 'player';
+        }
+      }
+      setPlayerWonRound(humanWon);
+
+      // Anti-clockwise rotation based on whether Cutter ('player' / Bahar) won or lost!
       const { nextDealer, nextCutter } = resolveNextDealerAndCutter(dSeat, cSeat, toSide);
       setDealerSeat(nextDealer);
       dealerSeatRef.current = nextDealer;
       setCutterSeat(nextCutter);
       cutterSeatRef.current = nextCutter;
 
-      // Determine if the human player won their bet (or won as Dealer)
-      const humanInfo = seatsRef.current.find((s) => s.id === humanSeatRef.current);
-      let humanWon = false;
-      if (dSeat === humanSeatRef.current) {
-        humanWon = toSide === 'dealer';
-      } else if (humanInfo?.betSide) {
-        humanWon = humanInfo.betSide === toSide;
-      } else {
-        humanWon = toSide === 'player';
-      }
-
-      setPlayerWonRound(humanWon);
-      const newBalance = computePayout(balanceRef.current, currentBetRef.current, humanWon);
-      setBalance(newBalance);
-      balanceRef.current = newBalance;
+      await sceneRef.current?.syncSeats3D(nextDealer, nextCutter, settledSeats, false);
 
       setStats((prev) => {
         const streak = humanWon ? prev.currentStreak + 1 : 0;
@@ -250,9 +272,9 @@ export default function App() {
       const winningSideName =
         toSide === 'player'
           ? `Bahar (Cutter ${cSeat}'s Side)`
-          : `Andar (Dealer ${dSeat}'s Side)`;
+          : `Andar (Under ${dSeat}'s Side)`;
       setStatusText(
-        `🎉 ${drawnCard.label} matched on ${winningSideName}! Next: ${nextDealer} Deals, ${nextCutter} Cuts ↺`
+        `🎉 ${drawnCard.label} matched on ${winningSideName}! Next: ${nextDealer} Shuffles, ${nextCutter} Cuts ↺`
       );
 
       sceneRef.current?.setRoundOverOrbit(true);
@@ -268,9 +290,9 @@ export default function App() {
       const nextSideName =
         getReceivingSide(currentTurn + 1) === 'player'
           ? `Bahar (Cutter ${cutterSeatRef.current})`
-          : `Andar (Dealer ${dealerSeatRef.current})`;
+          : `Andar (Under ${dealerSeatRef.current})`;
       setStatusText(
-        `Dealer ${dealerSeatRef.current} dealt ${drawnCard.label} → Next: ${nextSideName}`
+        `Under ${dealerSeatRef.current} dealt ${drawnCard.label} → Next: ${nextSideName}`
       );
       setIsBusy(false);
       isBusyRef.current = false;
@@ -318,28 +340,40 @@ export default function App() {
         setActiveActorSeat(seatId);
 
         if (seatId === humanSeatRef.current) {
-          // Pause queue and let the Human Player pick Andar (Dealer) or Bahar (Cutter) in the bottom dock!
+          // Rule 1: If Human is the Cutter, they are locked to Bahar (Cutter's side) and only pick wager!
           const isYouCutter = seatId === cutterSeatRef.current;
+          const mySeatObj = seatsRef.current.find((s) => s.id === seatId);
+          const randomBet = generateRandomWager(mySeatObj?.balance ?? balanceRef.current);
+          setCurrentBet(randomBet);
+          currentBetRef.current = randomBet;
+
           setStatusText(
             isYouCutter
-              ? `✂️ You cut the deck! Place the 1st bet on Andar (${dealerSeatRef.current}) or Bahar (${cutterSeatRef.current}):`
-              : `💰 Your turn (Seat ${seatId})! Bet on Andar (Dealer ${dealerSeatRef.current}) or Bahar (Cutter ${cutterSeatRef.current}):`
+              ? `✂️ You are the Cutter (${cutterSeatRef.current}) — Main opponent of Under (${dealerSeatRef.current})! Place your Bahar bet:`
+              : `🪙 Your turn (Seat ${seatId})! Bet RC on Andar (Under ${dealerSeatRef.current}) or Bahar (Cutter ${cutterSeatRef.current}):`
           );
           setIsBusy(false);
           isBusyRef.current = false;
           return;
         }
 
-        // Bot places bet automatically
+        // Bot places random bet automatically (Rule 1: Cutter Bot is ALWAYS locked to 'player' / Bahar!)
         const isCutter = seatId === cutterSeatRef.current;
-        const { betSide, betAmount } = generateBotBet(seatId, isCutter);
+        const seatObj = seatsRef.current.find((s) => s.id === seatId);
+        const { betSide, betAmount } = generateBotBet(
+          seatId,
+          isCutter,
+          seatObj?.balance ?? INITIAL_SEAT_COINS
+        );
         const sideLabel =
           betSide === 'dealer'
-            ? `Andar (Dealer ${dealerSeatRef.current})`
+            ? `Andar (Under ${dealerSeatRef.current})`
             : `Bahar (Cutter ${cutterSeatRef.current})`;
 
         setStatusText(
-          `🤖 Seat ${seatId} bets ₹${betAmount} on ${sideLabel}...`
+          isCutter
+            ? `✂️ Cutter ${seatId} bets ${betAmount} RC on Bahar (Locked vs Under ${dealerSeatRef.current})...`
+            : `🤖 Seat ${seatId} bets ${betAmount} RC on ${sideLabel}...`
         );
         soundEngine.playChipClick();
 
@@ -368,8 +402,8 @@ export default function App() {
       setActiveActorSeat(dSeat);
       setStatusText(
         isBotDealer
-          ? `🎲 All bets placed! Bot Dealer (${dSeat}) is auto-dealing cards...`
-          : `👑 All bots placed their bets! Your turn as Dealer (${dSeat}) to deal cards.`
+          ? `🎲 All bets placed! Under (${dSeat}) is auto-dealing cards...`
+          : `👑 All bets placed! Your turn as Under (${dSeat}) to deal cards.`
       );
       setIsBusy(false);
       isBusyRef.current = false;
@@ -384,11 +418,13 @@ export default function App() {
       if (phaseRef.current !== 'betting') return;
       const token = roundTokenRef.current;
       const mySeat = humanSeatRef.current;
+      // Rule 1 enforcement: if Human is the Cutter, side is strictly 'player' (Bahar)
+      const effectiveSide: Side = mySeat === cutterSeatRef.current ? 'player' : chosenSide;
       const wager = currentBetRef.current;
 
       soundEngine.playChipClick();
       const updated = seatsRef.current.map((s) =>
-        s.id === mySeat ? { ...s, betSide: chosenSide, betAmount: wager } : s
+        s.id === mySeat ? { ...s, betSide: effectiveSide, betAmount: wager } : s
       );
       setSeats(updated);
       seatsRef.current = updated;
@@ -443,7 +479,7 @@ export default function App() {
       }
       if (roundTokenRef.current !== token) return;
 
-      // Rule 3: After Cutter cuts, bets are placed starting from Cutter in anti-clockwise order!
+      // After Cutter cuts, bets are placed starting from Cutter in anti-clockwise order!
       setPhase('betting');
       const order = getBettingOrder(dealerSeatRef.current, cutterSeatRef.current);
       await runBettingQueueFrom(order, 0, token);
@@ -451,7 +487,7 @@ export default function App() {
     [runBettingQueueFrom]
   );
 
-  // Start a new round with active Dealer & Cutter
+  // Start a new round with active Dealer & Cutter while preserving constant 6,000 RC currency pool
   const startNewRound = useCallback(
     async (overrideDealer?: SeatId, overrideCutter?: SeatId, overrideHuman?: SeatId) => {
       const token = ++roundTokenRef.current;
@@ -473,9 +509,19 @@ export default function App() {
       cutterSeatRef.current = activeCutter;
       setActiveActorSeat(activeDealer);
 
-      const freshSeats = createInitialSeats(activeHuman);
-      setSeats(freshSeats);
-      seatsRef.current = freshSeats;
+      // Preserve constant-sum balances across rounds!
+      const nextSeats = prepareSeatsForNextRound(seatsRef.current, activeHuman);
+      setSeats(nextSeats);
+      seatsRef.current = nextSeats;
+
+      const humanSeatObj = nextSeats.find((s) => s.id === activeHuman);
+      const humanBal = humanSeatObj ? humanSeatObj.balance : INITIAL_SEAT_COINS;
+      setBalance(humanBal);
+      balanceRef.current = humanBal;
+
+      const randomInitialWager = generateRandomWager(humanBal);
+      setCurrentBet(randomInitialWager);
+      currentBetRef.current = randomInitialWager;
 
       setWinner(null);
       setMatchingCard(null);
@@ -495,11 +541,11 @@ export default function App() {
 
       setPhase('shuffling');
       setStatusText(
-        `👑 Dealer (${activeDealer}) is shuffling the deck → Cutter (${activeCutter}) cuts next...`
+        `👑 Under (${activeDealer}) is shuffling the deck → Cutter (${activeCutter}) cuts next...`
       );
 
       if (sceneRef.current) {
-        await sceneRef.current.syncSeats3D(activeDealer, activeCutter, freshSeats, true);
+        await sceneRef.current.syncSeats3D(activeDealer, activeCutter, nextSeats, true);
         await sceneRef.current.resetRoundAnimation(true);
       }
 
@@ -508,7 +554,7 @@ export default function App() {
       // If Human is Dealer, wait for Human to click "SHUFFLE & PASS TO CUTTER"
       if (activeDealer === activeHuman) {
         setStatusText(
-          `👑 You are the Dealer (Seat ${activeDealer})! Tap Shuffle to pass deck to Cutter (${activeCutter}).`
+          `👑 You are Under / Shuffler (Seat ${activeDealer})! Tap Shuffle to pass deck to Cutter (${activeCutter}).`
         );
         setIsBusy(false);
         isBusyRef.current = false;
@@ -523,14 +569,14 @@ export default function App() {
         // Human is Cutter -> Preview cut and let Human adjust slider & click "CUT DECK"
         sceneRef.current?.previewCut(26, 52);
         setStatusText(
-          `✂️ Your turn to Cut (Seat ${activeCutter})! Slide to cut deck, then place 1st bet.`
+          `✂️ Your turn to Cut (Seat ${activeCutter})! Slide to cut deck, then place your Bahar bet.`
         );
         setIsBusy(false);
         isBusyRef.current = false;
       } else {
         // Bot is Cutter -> Bot Cutter automatically cuts the deck first!
         setStatusText(
-          `✂️ Bot Cutter (Seat ${activeCutter}) is cutting Dealer ${activeDealer}'s deck...`
+          `✂️ Bot Cutter (Seat ${activeCutter}) is cutting Under ${activeDealer}'s deck...`
         );
         const botCut = generateBotCutIndex();
         await executeCutAndStartBetting(botCut, token);
@@ -611,6 +657,13 @@ export default function App() {
       isAutoDealingRef.current = next;
       return next;
     });
+  }, []);
+
+  // Randomize human wager button handler
+  const handleRandomizeBet = useCallback(() => {
+    const rnd = generateRandomWager(balanceRef.current);
+    setCurrentBet(rnd);
+    currentBetRef.current = rnd;
   }, []);
 
   // Keyboard shortcuts
@@ -698,7 +751,11 @@ export default function App() {
           statusText={statusText}
           onPlayerShuffle={handlePlayerShuffle}
           currentBet={currentBet}
-          onSelectBet={setCurrentBet}
+          onSelectBet={(b) => {
+            setCurrentBet(b);
+            currentBetRef.current = b;
+          }}
+          onRandomizeBet={handleRandomizeBet}
           cutIndex={cutIndex}
           onChangeCutIndex={handleCutChange}
           onConfirmCut={handleConfirmCut}
@@ -734,6 +791,7 @@ export default function App() {
           matchingCard={matchingCard}
           pointCard={pointCard}
           betAmount={currentBet}
+          humanDelta={humanDelta}
           totalCardsDealt={playerCards.length + dealerCards.length}
           stats={stats}
           onNextRound={() => startNewRound()}
