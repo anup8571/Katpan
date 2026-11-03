@@ -370,23 +370,211 @@ async function handleClientFallback(path: string, init?: RequestInit): Promise<R
     return jsonRes({ user: acc }, 201);
   }
 
-  if (path === '/api/rooms') {
-    return jsonRes({
-      rooms: [
-        {
-          roomCode: 'RK-ROYAL',
-          roomName: 'Maharaja Royal Club',
-          hostName: 'Maharaja Bot',
-          dealerSeat: 'A',
-          cutterSeat: 'B',
-          phase: 'shuffling',
-          playerCount: 1,
-          maxPlayers: 6,
-          occupiedSeats: {},
-          isPublic: true,
-        },
-      ],
+  const ROOMS_STORAGE_KEY = 'royalkatti_rooms_v1';
+  const INVITES_STORAGE_KEY = 'royalkatti_room_invites_v1';
+
+  const loadLocalRooms = (): any[] => {
+    try {
+      const raw = localStorage.getItem(ROOMS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // Ignore
+    }
+    return [
+      {
+        roomCode: 'RK-ROYAL',
+        roomName: 'Maharaja Royal Club',
+        hostName: 'Maharaja Bot',
+        dealerSeat: 'A',
+        cutterSeat: 'B',
+        phase: 'shuffling',
+        playerCount: 1,
+        maxPlayers: 6,
+        occupiedSeats: { A: 'Maharaja Bot' },
+        chat: [],
+        isPublic: true,
+      },
+    ];
+  };
+
+  const saveLocalRooms = (list: any[]) => {
+    try {
+      localStorage.setItem(ROOMS_STORAGE_KEY, JSON.stringify(list.slice(0, 30)));
+    } catch {
+      // Ignore
+    }
+  };
+
+  if (path.startsWith('/api/rooms/invites/dismiss') && method === 'POST') {
+    try {
+      const raw = localStorage.getItem(INVITES_STORAGE_KEY);
+      const list: any[] = raw ? JSON.parse(raw) : [];
+      const found = list.find((i) => i.id === body.inviteId);
+      if (found) found.dismissed = true;
+      localStorage.setItem(INVITES_STORAGE_KEY, JSON.stringify(list));
+    } catch {
+      // Ignore
+    }
+    return jsonRes({ ok: true });
+  }
+
+  if (path.startsWith('/api/rooms/invites') && method === 'GET') {
+    try {
+      const raw = localStorage.getItem(INVITES_STORAGE_KEY);
+      const list: any[] = raw ? JSON.parse(raw) : [];
+      return jsonRes({ invites: list.filter((i) => !i.dismissed).slice(0, 10) });
+    } catch {
+      return jsonRes({ invites: [] });
+    }
+  }
+
+  if (path === '/api/rooms/invite' && method === 'POST') {
+    const roomCode = String(body.roomCode || '').trim().toUpperCase();
+    const targetIdentifier = String(body.targetIdentifier || '').trim().toLowerCase();
+    const invite = {
+      id: `inv-${Date.now()}`,
+      roomCode,
+      roomName: String(body.roomName || `Table ${roomCode}`),
+      fromPlayerName: String(body.fromPlayerName || 'Royal Host'),
+      fromPlayerId: String(body.fromPlayerId || 'host'),
+      targetIdentifier,
+      createdAt: Date.now(),
+      dismissed: false,
+    };
+    try {
+      const raw = localStorage.getItem(INVITES_STORAGE_KEY);
+      const list: any[] = raw ? JSON.parse(raw) : [];
+      list.unshift(invite);
+      localStorage.setItem(INVITES_STORAGE_KEY, JSON.stringify(list.slice(0, 30)));
+    } catch {
+      // Ignore
+    }
+    return jsonRes(
+      {
+        ok: true,
+        invite,
+        message: `Invitation to room ${roomCode} sent to ${targetIdentifier}!`,
+      },
+      201
+    );
+  }
+
+  if (path === '/api/rooms/join' && method === 'POST') {
+    const rawCode = String(body.roomCode || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9-]/g, '');
+    if (!rawCode) return jsonRes({ error: 'Please enter a valid Room Code.' }, 400);
+    const playerName = String(body.playerName || 'Royal Player').trim();
+    const preferredSeat = ['A', 'B', 'C', 'D', 'E', 'F'].includes(body.seatId)
+      ? body.seatId
+      : 'D';
+
+    const roomsList = loadLocalRooms();
+    let room = roomsList.find((r) => r.roomCode === rawCode);
+    if (!room) {
+      room = {
+        roomCode: rawCode,
+        roomName: `Royal Table ${rawCode}`,
+        hostName: playerName,
+        dealerSeat: 'A',
+        cutterSeat: 'B',
+        phase: 'shuffling',
+        playerCount: 1,
+        maxPlayers: 6,
+        occupiedSeats: {},
+        chat: [],
+        isPublic: true,
+      };
+      roomsList.unshift(room);
+    }
+    if (!room.occupiedSeats) room.occupiedSeats = {};
+    if (!room.chat) room.chat = [];
+
+    for (const [sKey, occ] of Object.entries(room.occupiedSeats)) {
+      if (occ === playerName && sKey !== preferredSeat) {
+        delete room.occupiedSeats[sKey];
+      }
+    }
+    room.occupiedSeats[preferredSeat] = playerName;
+    room.playerCount = Math.max(1, Object.keys(room.occupiedSeats).length);
+    room.chat.push({
+      id: `join-${Date.now()}`,
+      sender: playerName,
+      seatId: preferredSeat,
+      text: `Joined via Room Code ${rawCode} (Seat ${preferredSeat})`,
+      timestamp: Date.now(),
     });
+    saveLocalRooms(roomsList);
+    return jsonRes({ room, assignedSeat: preferredSeat });
+  }
+
+  if (path === '/api/rooms/leave' && method === 'POST') {
+    return jsonRes({ ok: true });
+  }
+
+  if (path === '/api/rooms/chat' && method === 'POST') {
+    const rawCode = String(body.roomCode || '').trim().toUpperCase();
+    const roomsList = loadLocalRooms();
+    const room = roomsList.find((r) => r.roomCode === rawCode);
+    const message = {
+      id: `msg-${Date.now()}`,
+      sender: String(body.sender || 'Player'),
+      seatId: body.seatId || 'D',
+      text: String(body.text || ''),
+      timestamp: Date.now(),
+    };
+    if (room) {
+      if (!room.chat) room.chat = [];
+      room.chat.push(message);
+      saveLocalRooms(roomsList);
+    }
+    return jsonRes({ ok: true, room, message });
+  }
+
+  if (path.startsWith('/api/rooms')) {
+    const roomsList = loadLocalRooms();
+    if (method === 'POST') {
+      const rawCustom = String(body.customCode || '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9-]/g, '')
+        .slice(0, 12);
+      const code =
+        rawCustom && rawCustom.length >= 4
+          ? rawCustom
+          : `RK-${Math.floor(1000 + Math.random() * 9000)}`;
+      const hostName = String(body.hostName || 'Royal Player').trim();
+      const roomName = String(body.roomName || `${hostName}'s Table`).trim();
+      const seat = body.preferredSeat || 'D';
+      const newRoom = {
+        roomCode: code,
+        roomName,
+        hostName,
+        dealerSeat: 'A',
+        cutterSeat: 'B',
+        phase: 'shuffling',
+        playerCount: 1,
+        maxPlayers: 6,
+        occupiedSeats: { [seat]: hostName },
+        chat: [
+          {
+            id: `init-${code}`,
+            sender: hostName,
+            seatId: seat,
+            text: `Created room ${roomName} (${code}). Invite players with code ${code}!`,
+            timestamp: Date.now(),
+          },
+        ],
+        isPublic: true,
+      };
+      roomsList.unshift(newRoom);
+      saveLocalRooms(roomsList);
+      return jsonRes({ room: newRoom, assignedSeat: seat }, 201);
+    }
+    return jsonRes({ rooms: roomsList });
   }
 
   return jsonRes({ ok: true });

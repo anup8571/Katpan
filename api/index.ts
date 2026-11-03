@@ -1033,15 +1033,32 @@ export default async function handler(
   }
 
   if (pathname === '/api/rooms') {
-    if (method === 'GET') return sendJson(res, 200, { rooms: store.rooms });
+    if (method === 'GET') {
+      const requestedCode = String(parsedUrl.searchParams.get('roomCode') || '')
+        .trim()
+        .toUpperCase();
+      if (requestedCode) {
+        const found = store.rooms.find((r) => r.roomCode === requestedCode);
+        if (!found) return sendJson(res, 404, { error: 'Room not found' });
+        return sendJson(res, 200, { room: found });
+      }
+      return sendJson(res, 200, { rooms: store.rooms });
+    }
     if (method === 'POST') {
-      const code = `RK-${crypto.randomInt(1000, 9999)}`;
+      const rawCustom = String(body.customCode || '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9-]/g, '')
+        .slice(0, 12);
+      const code =
+        rawCustom && rawCustom.length >= 4 && !store.rooms.some((r) => r.roomCode === rawCustom)
+          ? rawCustom
+          : `RK-${crypto.randomInt(1000, 9999)}`;
       const hostName = String(body.hostName || 'Player').trim();
       const roomName = String(body.roomName || `${hostName}'s Table`).trim();
       const seat = ['A', 'B', 'C', 'D', 'E', 'F'].includes(body.preferredSeat)
         ? body.preferredSeat
         : 'D';
-      const newRoom = {
+      const newRoom: any = {
         roomCode: code,
         roomName,
         hostName,
@@ -1051,12 +1068,178 @@ export default async function handler(
         playerCount: 1,
         maxPlayers: 6,
         occupiedSeats: { [seat]: hostName },
+        chat: [
+          {
+            id: `init-${code}`,
+            sender: hostName,
+            seatId: seat,
+            text: `Created room ${roomName} (${code}). Invite players with code ${code}!`,
+            timestamp: Date.now(),
+          },
+        ],
         isPublic: true,
       };
       store.rooms.unshift(newRoom);
       saveServerStore(store);
-      return sendJson(res, 201, { room: newRoom });
+      return sendJson(res, 201, { room: newRoom, assignedSeat: seat });
     }
+  }
+
+  if (pathname === '/api/rooms/join' && method === 'POST') {
+    const rawCode = String(body.roomCode || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9-]/g, '');
+    if (!rawCode) {
+      return sendJson(res, 400, { error: 'Please enter a valid Room Code.' });
+    }
+    const playerName = String(body.playerName || 'Royal Player').trim();
+    const preferredSeat = ['A', 'B', 'C', 'D', 'E', 'F'].includes(body.seatId)
+      ? body.seatId
+      : 'D';
+
+    let room: any = store.rooms.find((r) => r.roomCode === rawCode);
+    if (!room) {
+      room = {
+        roomCode: rawCode,
+        roomName: `Royal Table ${rawCode}`,
+        hostName: playerName,
+        dealerSeat: 'A',
+        cutterSeat: 'B',
+        phase: 'shuffling',
+        playerCount: 1,
+        maxPlayers: 6,
+        occupiedSeats: {},
+        chat: [],
+        isPublic: true,
+      };
+      store.rooms.unshift(room);
+    }
+    if (!room.occupiedSeats) room.occupiedSeats = {};
+    if (!room.chat) room.chat = [];
+
+    for (const [sKey, occ] of Object.entries(room.occupiedSeats)) {
+      if (occ === playerName && sKey !== preferredSeat) {
+        delete room.occupiedSeats[sKey];
+      }
+    }
+
+    const allSeats = ['D', 'C', 'E', 'B', 'A', 'F'];
+    let assignedSeat = preferredSeat;
+    if (room.occupiedSeats[assignedSeat] && room.occupiedSeats[assignedSeat] !== playerName) {
+      const free = allSeats.find((s) => !room.occupiedSeats[s]);
+      if (free) assignedSeat = free;
+    }
+
+    const alreadyInSeat = room.occupiedSeats[assignedSeat] === playerName;
+    room.occupiedSeats[assignedSeat] = playerName;
+    room.playerCount = Math.max(1, Object.keys(room.occupiedSeats).length);
+
+    if (!alreadyInSeat) {
+      room.chat.push({
+        id: `join-${Date.now()}`,
+        sender: playerName,
+        seatId: assignedSeat,
+        text: `Joined via Room Code ${rawCode} (Seat ${assignedSeat})`,
+        timestamp: Date.now(),
+      });
+    }
+    saveServerStore(store);
+    return sendJson(res, 200, { room, assignedSeat });
+  }
+
+  if (pathname === '/api/rooms/leave' && method === 'POST') {
+    const rawCode = String(body.roomCode || '').trim().toUpperCase();
+    const playerName = String(body.playerName || '').trim();
+    const room: any = store.rooms.find((r) => r.roomCode === rawCode);
+    if (room && room.occupiedSeats && playerName) {
+      for (const [sKey, occ] of Object.entries(room.occupiedSeats)) {
+        if (occ === playerName) delete room.occupiedSeats[sKey];
+      }
+      room.playerCount = Math.max(1, Object.keys(room.occupiedSeats).length);
+      saveServerStore(store);
+    }
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (pathname === '/api/rooms/chat' && method === 'POST') {
+    const rawCode = String(body.roomCode || '').trim().toUpperCase();
+    const sender = String(body.sender || 'Player').trim();
+    const seatId = ['A', 'B', 'C', 'D', 'E', 'F'].includes(body.seatId) ? body.seatId : 'D';
+    const text = String(body.text || '').trim().slice(0, 140);
+    const room: any = store.rooms.find((r) => r.roomCode === rawCode);
+    if (!room || !text) return sendJson(res, 404, { error: 'Room not found' });
+    if (!room.chat) room.chat = [];
+    const message = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      sender,
+      seatId,
+      text,
+      timestamp: Date.now(),
+    };
+    room.chat = [...room.chat.slice(-24), message];
+    saveServerStore(store);
+    return sendJson(res, 200, { ok: true, room, message });
+  }
+
+  if (pathname === '/api/rooms/invite' && method === 'POST') {
+    const roomCode = String(body.roomCode || '').trim().toUpperCase();
+    const roomName = String(body.roomName || `Table ${roomCode}`).trim();
+    const fromPlayerName = String(body.fromPlayerName || 'Royal Host').trim();
+    const fromPlayerId = String(body.fromPlayerId || fromPlayerName).trim();
+    const targetIdentifier = String(body.targetIdentifier || '').trim().toLowerCase();
+    if (!roomCode || !targetIdentifier) {
+      return sendJson(res, 400, { error: 'Room Code and target Player ID are required.' });
+    }
+    const storeAny = store as any;
+    if (!Array.isArray(storeAny.invites)) storeAny.invites = [];
+    const invite = {
+      id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      roomCode,
+      roomName,
+      fromPlayerName,
+      fromPlayerId,
+      targetIdentifier,
+      createdAt: Date.now(),
+      dismissed: false,
+    };
+    storeAny.invites.unshift(invite);
+    saveServerStore(store);
+    return sendJson(res, 201, {
+      ok: true,
+      invite,
+      message: `Invitation to room ${roomCode} sent to ${targetIdentifier}!`,
+    });
+  }
+
+  if (pathname === '/api/rooms/invites' && method === 'GET') {
+    const playerId = String(parsedUrl.searchParams.get('playerId') || '').trim().toLowerCase();
+    const email = String(parsedUrl.searchParams.get('email') || '').trim().toLowerCase();
+    const displayName = String(parsedUrl.searchParams.get('displayName') || '').trim().toLowerCase();
+    const storeAny = store as any;
+    const invitesList: any[] = Array.isArray(storeAny.invites) ? storeAny.invites : [];
+    const cutoff = Date.now() - 30 * 60 * 1000;
+    const matching = invitesList.filter((inv) => {
+      if (inv.dismissed || inv.createdAt < cutoff) return false;
+      if (inv.targetIdentifier === 'all') return true;
+      return (
+        (playerId && inv.targetIdentifier === playerId) ||
+        (email && inv.targetIdentifier === email) ||
+        (displayName && inv.targetIdentifier === displayName)
+      );
+    });
+    return sendJson(res, 200, { invites: matching.slice(0, 10) });
+  }
+
+  if (pathname === '/api/rooms/invites/dismiss' && method === 'POST') {
+    const inviteId = String(body.inviteId || '').trim();
+    const storeAny = store as any;
+    if (Array.isArray(storeAny.invites)) {
+      const found = storeAny.invites.find((i: any) => i.id === inviteId);
+      if (found) found.dismissed = true;
+      saveServerStore(store);
+    }
+    return sendJson(res, 200, { ok: true });
   }
 
   return sendJson(res, 404, { error: 'Not found' });

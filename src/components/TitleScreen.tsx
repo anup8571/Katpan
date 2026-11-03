@@ -1,9 +1,10 @@
-import React from 'react';
-import { Users, User } from 'lucide-react';
+import React, { useState } from 'react';
+import { Users, User, LogIn } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface TitleScreenProps {
   onStart: () => void;
+  onJoinByRoomCode?: (roomCode: string) => void;
   onOpenMultiplayer?: () => void;
   onOpenProfile?: () => void;
   userDisplayName?: string | null;
@@ -11,10 +12,24 @@ interface TitleScreenProps {
 
 export const TitleScreen: React.FC<TitleScreenProps> = ({
   onStart,
+  onJoinByRoomCode,
   onOpenMultiplayer,
   onOpenProfile,
   userDisplayName,
 }) => {
+  const [roomCodeInput, setRoomCodeInput] = useState('');
+
+  const handleQuickJoin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = roomCodeInput
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9-]/g, '');
+    if (!cleaned) return;
+    onJoinByRoomCode?.(cleaned);
+    setRoomCodeInput('');
+  };
+
   return (
     <div className="fixed inset-0 z-30 flex flex-col justify-between items-center p-5 sm:p-8 pointer-events-none select-none">
       {/* Top Right Quick Glass Bar for Account & Multiplayer */}
@@ -25,7 +40,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-slate-950/40 backdrop-blur-md border border-white/15 text-xs font-bold text-sky-300 hover:bg-white/10 transition-all cursor-pointer shadow-lg"
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Multiplayer Lobby</span>
+            <span>Rooms &amp; Invite Code</span>
           </button>
         )}
         {onOpenProfile && (
@@ -92,8 +107,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       {/* Central Negative Space (Shows Live 3D Casino Table) */}
       <div className="flex-1" />
 
-      {/* Bottom Primary Start CTA & Single Control Hint Line */}
-      <div className="flex flex-col items-center gap-3 mb-2 pointer-events-auto max-w-sm w-full">
+      {/* Bottom Primary Start CTA, Quick Join by Room Code & Single Control Hint Line */}
+      <div className="flex flex-col items-center gap-2.5 mb-2 pointer-events-auto max-w-sm w-full">
         <button
           data-start="true"
           onClick={onStart}
@@ -105,10 +120,34 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           </span>
         </button>
 
+        {/* Quick Join via Friend's Room Code */}
+        {onJoinByRoomCode && (
+          <form
+            onSubmit={handleQuickJoin}
+            className="w-full flex items-center gap-2 bg-slate-950/55 backdrop-blur-xl border border-white/15 rounded-2xl p-1.5 shadow-lg"
+          >
+            <input
+              type="text"
+              value={roomCodeInput}
+              onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
+              placeholder="Have a Room Code? (e.g. RK-4829)"
+              className="flex-1 px-3 py-2 rounded-xl bg-transparent text-xs font-mono uppercase text-white placeholder:text-slate-400 placeholder:font-sans placeholder:normal-case focus:outline-none"
+            />
+            <button
+              type="submit"
+              disabled={!roomCodeInput.trim()}
+              className="px-3.5 py-2 rounded-xl bg-sky-400 hover:bg-sky-300 disabled:opacity-40 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Join Room</span>
+            </button>
+          </form>
+        )}
+
         <PWAInstallButton />
 
         <p className="text-[11px] text-slate-300/85 font-medium tracking-wide text-center">
-          6-Seat Ring (A–F) · Live Multiplayer Rooms · Cloud Synced Royal Coins
+          6-Seat Ring (A–F) · Invite Friends via Room Code · Cloud Synced RC
         </p>
       </div>
     </div>

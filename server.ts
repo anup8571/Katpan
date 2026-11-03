@@ -1087,8 +1087,29 @@ async function startServer() {
   // =========================================================================
   // 3. MULTIPLAYER ROOMS REST ENDPOINTS
   // =========================================================================
-  app.get('/api/rooms', async (_req, res) => {
+  interface RoomInvitation {
+    id: string;
+    roomCode: string;
+    roomName: string;
+    fromPlayerName: string;
+    fromPlayerId: string;
+    targetIdentifier: string;
+    createdAt: number;
+    dismissed?: boolean;
+  }
+
+  const roomInvites: RoomInvitation[] = [];
+
+  app.get('/api/rooms', async (req, res) => {
     try {
+      const requestedCode = String(req.query.roomCode || '').trim().toUpperCase();
+      if (requestedCode) {
+        const room = liveRooms.get(requestedCode);
+        if (!room) {
+          return res.status(404).json({ error: 'Room not found' });
+        }
+        return res.json({ room });
+      }
       const roomsList = Array.from(liveRooms.values()).map((r) => ({
         roomCode: r.roomCode,
         roomName: r.roomName,
@@ -1110,27 +1131,37 @@ async function startServer() {
 
   app.post('/api/rooms', async (req, res) => {
     try {
-      const { roomName, hostName, preferredSeat, isPublic = true } = req.body || {};
+      const { roomName, customCode, hostName, preferredSeat, isPublic = true } = req.body || {};
       const cleanRoomName =
         String(roomName || '').trim() || `${hostName || 'Royal'}'s VIP Table`;
       const cleanHost = String(hostName || 'VIP Player').trim();
-      const code = `RK-${crypto.randomInt(1000, 9999)}`;
+      const rawCustom = String(customCode || '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9-]/g, '')
+        .slice(0, 12);
+      const code =
+        rawCustom && rawCustom.length >= 4 && !liveRooms.has(rawCustom)
+          ? rawCustom
+          : `RK-${crypto.randomInt(1000, 9999)}`;
       const seat: SeatId = ['A', 'B', 'C', 'D', 'E', 'F'].includes(preferredSeat)
         ? preferredSeat
         : 'D';
 
-      await db.insert(multiplayerRooms).values({
-        roomCode: code,
-        roomName: cleanRoomName,
-        hostUid: String(req.body?.hostUid || `host_${Date.now()}`),
-        hostName: cleanHost,
-        dealerSeat: 'A',
-        cutterSeat: 'B',
-        status: 'waiting',
-        playerCount: 1,
-        maxPlayers: 6,
-        isPublic: Boolean(isPublic),
-      });
+      await db
+        .insert(multiplayerRooms)
+        .values({
+          roomCode: code,
+          roomName: cleanRoomName,
+          hostUid: String(req.body?.hostUid || `host_${Date.now()}`),
+          hostName: cleanHost,
+          dealerSeat: 'A',
+          cutterSeat: 'B',
+          status: 'waiting',
+          playerCount: 1,
+          maxPlayers: 6,
+          isPublic: Boolean(isPublic),
+        })
+        .catch(() => {});
 
       const roomState: LiveRoomState = {
         roomCode: code,
@@ -1146,7 +1177,7 @@ async function startServer() {
             id: `init-${code}`,
             sender: cleanHost,
             seatId: seat,
-            text: `Created room ${cleanRoomName} (${code}). Invite friends with code ${code}!`,
+            text: `Created room ${cleanRoomName} (${code}). Invite players with code ${code}!`,
             timestamp: Date.now(),
           },
         ],
@@ -1154,11 +1185,220 @@ async function startServer() {
       };
       liveRooms.set(code, roomState);
 
-      return res.status(201).json({ room: roomState });
+      return res.status(201).json({ room: roomState, assignedSeat: seat });
     } catch (error) {
       console.error('Error creating room:', error);
       return res.status(500).json({ error: 'Failed to create multiplayer room' });
     }
+  });
+
+  app.post('/api/rooms/join', async (req, res) => {
+    try {
+      const rawCode = String(req.body?.roomCode || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9-]/g, '');
+      if (!rawCode) {
+        return res.status(400).json({ error: 'Please enter a valid Room Code.' });
+      }
+      const playerName = String(req.body?.playerName || 'Royal Player').trim();
+      const preferredSeat: SeatId = ['A', 'B', 'C', 'D', 'E', 'F'].includes(req.body?.seatId)
+        ? req.body.seatId
+        : 'D';
+
+      let room = liveRooms.get(rawCode);
+      if (!room) {
+        room = {
+          roomCode: rawCode,
+          roomName: `Royal Table ${rawCode}`,
+          hostName: playerName,
+          isPublic: true,
+          dealerSeat: 'A',
+          cutterSeat: 'B',
+          phase: 'shuffling',
+          occupiedSeats: {},
+          chat: [],
+          updatedAt: Date.now(),
+        };
+        liveRooms.set(rawCode, room);
+      }
+
+      // Remove player's previous seat in this room if they are switching seats
+      for (const [sKey, occupant] of Object.entries(room.occupiedSeats)) {
+        if (occupant === playerName && sKey !== preferredSeat) {
+          delete room.occupiedSeats[sKey];
+        }
+      }
+
+      const allSeats: SeatId[] = ['D', 'C', 'E', 'B', 'A', 'F'];
+      let assignedSeat: SeatId = preferredSeat;
+      if (
+        room.occupiedSeats[assignedSeat] &&
+        room.occupiedSeats[assignedSeat] !== playerName
+      ) {
+        const free = allSeats.find((s) => !room!.occupiedSeats[s]);
+        if (free) assignedSeat = free;
+      }
+
+      const alreadyInSeat = room.occupiedSeats[assignedSeat] === playerName;
+      room.occupiedSeats[assignedSeat] = playerName;
+      room.updatedAt = Date.now();
+
+      if (!alreadyInSeat) {
+        const joinChat: ChatMessage = {
+          id: `join-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          sender: playerName,
+          seatId: assignedSeat,
+          text: `Joined via Room Code ${rawCode} (Seat ${assignedSeat})`,
+          timestamp: Date.now(),
+        };
+        room.chat = [...room.chat.slice(-24), joinChat];
+      }
+
+      broadcastToRoom(rawCode, {
+        type: 'room:state',
+        room,
+      });
+
+      return res.json({ room, assignedSeat });
+    } catch (error) {
+      console.error('Error joining room:', error);
+      return res.status(500).json({ error: 'Could not join room.' });
+    }
+  });
+
+  app.post('/api/rooms/leave', async (req, res) => {
+    try {
+      const roomCode = String(req.body?.roomCode || '').trim().toUpperCase();
+      const playerName = String(req.body?.playerName || '').trim();
+      const room = liveRooms.get(roomCode);
+      if (room && playerName) {
+        for (const [sKey, occupant] of Object.entries(room.occupiedSeats)) {
+          if (occupant === playerName) {
+            delete room.occupiedSeats[sKey];
+          }
+        }
+        room.updatedAt = Date.now();
+        broadcastToRoom(roomCode, {
+          type: 'room:state',
+          room,
+        });
+      }
+      return res.json({ ok: true });
+    } catch {
+      return res.json({ ok: true });
+    }
+  });
+
+  app.post('/api/rooms/chat', async (req, res) => {
+    try {
+      const roomCode = String(req.body?.roomCode || '').trim().toUpperCase();
+      const sender = String(req.body?.sender || 'Player').trim();
+      const seatId: SeatId = ['A', 'B', 'C', 'D', 'E', 'F'].includes(req.body?.seatId)
+        ? req.body.seatId
+        : 'D';
+      const text = String(req.body?.text || '').trim().slice(0, 140);
+      if (!roomCode || !text) {
+        return res.status(400).json({ error: 'Room code and message are required.' });
+      }
+      const room = liveRooms.get(roomCode);
+      if (!room) {
+        return res.status(404).json({ error: 'Room not found.' });
+      }
+      const chatEntry: ChatMessage = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        sender,
+        seatId,
+        text,
+        timestamp: Date.now(),
+      };
+      room.chat = [...room.chat.slice(-24), chatEntry];
+      room.updatedAt = Date.now();
+
+      broadcastToRoom(roomCode, {
+        type: 'room:chat',
+        roomCode,
+        message: chatEntry,
+      });
+
+      return res.json({ ok: true, room, message: chatEntry });
+    } catch {
+      return res.status(500).json({ error: 'Could not send chat.' });
+    }
+  });
+
+  app.post('/api/rooms/invite', async (req, res) => {
+    try {
+      const roomCode = String(req.body?.roomCode || '').trim().toUpperCase();
+      const roomName = String(req.body?.roomName || `Table ${roomCode}`).trim();
+      const fromPlayerName = String(req.body?.fromPlayerName || 'Royal Host').trim();
+      const fromPlayerId = String(req.body?.fromPlayerId || fromPlayerName).trim();
+      const targetIdentifier = String(req.body?.targetIdentifier || '').trim().toLowerCase();
+
+      if (!roomCode || !targetIdentifier) {
+        return res.status(400).json({
+          error: 'Room Code and target Player ID (or Email) are required.',
+        });
+      }
+
+      const invite: RoomInvitation = {
+        id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        roomCode,
+        roomName,
+        fromPlayerName,
+        fromPlayerId,
+        targetIdentifier,
+        createdAt: Date.now(),
+        dismissed: false,
+      };
+      roomInvites.unshift(invite);
+      if (roomInvites.length > 100) roomInvites.length = 100;
+
+      // Broadcast real-time invite event over WebSockets
+      const payload = JSON.stringify({
+        type: 'room:invite',
+        invite,
+      });
+      for (const [clientWs] of peers.entries()) {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(payload);
+        }
+      }
+
+      return res.status(201).json({
+        ok: true,
+        invite,
+        message: `Invitation to room ${roomCode} sent to ${targetIdentifier}!`,
+      });
+    } catch (error) {
+      console.error('Error sending room invite:', error);
+      return res.status(500).json({ error: 'Failed to send invitation.' });
+    }
+  });
+
+  app.get('/api/rooms/invites', async (req, res) => {
+    const playerId = String(req.query.playerId || '').trim().toLowerCase();
+    const email = String(req.query.email || '').trim().toLowerCase();
+    const displayName = String(req.query.displayName || '').trim().toLowerCase();
+    const cutoff = Date.now() - 30 * 60 * 1000; // last 30 mins
+
+    const matching = roomInvites.filter((inv) => {
+      if (inv.dismissed || inv.createdAt < cutoff) return false;
+      if (inv.targetIdentifier === 'all') return true;
+      return (
+        (playerId && inv.targetIdentifier === playerId) ||
+        (email && inv.targetIdentifier === email) ||
+        (displayName && inv.targetIdentifier === displayName)
+      );
+    });
+    return res.json({ invites: matching.slice(0, 10) });
+  });
+
+  app.post('/api/rooms/invites/dismiss', async (req, res) => {
+    const inviteId = String(req.body?.inviteId || '').trim();
+    const found = roomInvites.find((i) => i.id === inviteId);
+    if (found) found.dismissed = true;
+    return res.json({ ok: true });
   });
 
   // =========================================================================

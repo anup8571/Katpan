@@ -36,6 +36,7 @@ import { AuthProfileModal, UserProfile } from './components/AuthProfileModal';
 import {
   MultiplayerModal,
   RoomChatMessage,
+  RoomInvitationItem,
 } from './components/MultiplayerModal';
 import { SettingsModal } from './components/SettingsModal';
 import { apiFetch, getWebSocketUrl } from './utils/apiClient';
@@ -78,6 +79,7 @@ export default function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const [activeRoom, setActiveRoom] = useState<LiveRoomState | null>(null);
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
+  const [incomingInvites, setIncomingInvites] = useState<RoomInvitationItem[]>([]);
 
   // 6-Player Anti-Clockwise Ring State (A -> B -> C -> D -> E -> F)
   // First A is Dealer (Under/Shuffler), and B is Cutter (Bahar)!
@@ -262,7 +264,16 @@ export default function App() {
             );
           }
         } else if (msg.type === 'room:chat' && msg.message) {
-          setChatMessages((prev) => [...prev.slice(-29), msg.message]);
+          setChatMessages((prev) => {
+            if (prev.some((m) => m.id === msg.message.id)) return prev;
+            return [...prev.slice(-29), msg.message];
+          });
+        } else if (msg.type === 'room:invite' && msg.invite) {
+          const inv: RoomInvitationItem = msg.invite;
+          setIncomingInvites((prev) => {
+            if (prev.some((i) => i.id === inv.id)) return prev;
+            return [inv, ...prev].slice(0, 10);
+          });
         }
       } catch {
         // Ignore malformed messages
@@ -293,50 +304,214 @@ export default function App() {
   );
 
   const handleJoinRoom = useCallback(
-    (roomCode: string, seatId: SeatId = humanSeatRef.current) => {
-      const ws = ensureWebSocket();
+    async (roomCode: string, seatId: SeatId = humanSeatRef.current) => {
+      const cleanedCode = roomCode
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9-]/g, '');
+      if (!cleanedCode) return;
+
       const playerName =
         currentUser?.displayName ||
+        currentUser?.playerId ||
         currentUser?.email?.split('@')[0] ||
         `VIP-${seatId}`;
-      const sendJoin = () => {
-        ws.send(
-          JSON.stringify({
-            type: 'room:join',
-            roomCode,
+
+      // 1. Join via REST endpoint immediately so room state works across all environments
+      try {
+        const res = await apiFetch('/api/rooms/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode: cleanedCode,
             seatId,
             playerName,
             uid: currentUser?.uid || `guest-${Date.now()}`,
-          })
-        );
-      };
-      if (ws.readyState === WebSocket.OPEN) {
-        sendJoin();
-      } else {
-        ws.addEventListener('open', sendJoin, { once: true });
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.room) {
+            setActiveRoom(data.room);
+            setChatMessages(data.room.chat || []);
+            setStatusText(
+              `Connected to Room ${data.room.roomCode} (${data.room.roomName}) • Share code ${data.room.roomCode} to invite friends!`
+            );
+          }
+        }
+      } catch {
+        // Ignore transient REST error
+      }
+
+      // 2. Also connect via WebSocket for instant real-time updates
+      try {
+        const ws = ensureWebSocket();
+        const sendJoin = () => {
+          ws.send(
+            JSON.stringify({
+              type: 'room:join',
+              roomCode: cleanedCode,
+              seatId,
+              playerName,
+              uid: currentUser?.uid || `guest-${Date.now()}`,
+            })
+          );
+        };
+        if (ws.readyState === WebSocket.OPEN) {
+          sendJoin();
+        } else {
+          ws.addEventListener('open', sendJoin, { once: true });
+        }
+      } catch {
+        // Ignore if WS unavailable
       }
     },
     [currentUser, ensureWebSocket]
   );
 
   const handleLeaveRoom = useCallback(() => {
+    const code = activeRoom?.roomCode;
+    const playerName =
+      currentUser?.displayName ||
+      currentUser?.playerId ||
+      currentUser?.email?.split('@')[0] ||
+      `VIP-${humanSeatRef.current}`;
+
+    if (code) {
+      apiFetch('/api/rooms/leave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomCode: code, playerName }),
+      }).catch(() => {});
+    }
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'room:leave' }));
     }
     setActiveRoom(null);
     setChatMessages([]);
+  }, [activeRoom, currentUser]);
+
+  const handleSendChat = useCallback(
+    async (text: string) => {
+      const code = activeRoom?.roomCode;
+      const sender =
+        currentUser?.displayName ||
+        currentUser?.playerId ||
+        currentUser?.email?.split('@')[0] ||
+        `VIP-${humanSeatRef.current}`;
+
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'room:chat',
+            text,
+          })
+        );
+      }
+      if (code) {
+        try {
+          const res = await apiFetch('/api/rooms/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomCode: code,
+              sender,
+              seatId: humanSeatRef.current,
+              text,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.message) {
+              setChatMessages((prev) => {
+                if (prev.some((m) => m.id === data.message.id)) return prev;
+                return [...prev.slice(-29), data.message];
+              });
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    },
+    [activeRoom, currentUser]
+  );
+
+  const handleDismissInvite = useCallback((inviteId: string) => {
+    setIncomingInvites((prev) => prev.filter((i) => i.id !== inviteId));
+    apiFetch('/api/rooms/invites/dismiss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviteId }),
+    }).catch(() => {});
   }, []);
 
-  const handleSendChat = useCallback((text: string) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'room:chat',
-          text,
-        })
-      );
+  // Poll incoming room invitations & active room state
+  useEffect(() => {
+    const pollInvitesAndRoom = async () => {
+      try {
+        const params = new URLSearchParams();
+        if (currentUser?.playerId || currentUser?.uid) {
+          params.set('playerId', currentUser.playerId || currentUser.uid);
+        }
+        if (currentUser?.email) {
+          params.set('email', currentUser.email);
+        }
+        if (currentUser?.displayName) {
+          params.set('displayName', currentUser.displayName);
+        }
+        const res = await apiFetch(`/api/rooms/invites?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.invites)) {
+            setIncomingInvites(data.invites);
+          }
+        }
+
+        if (activeRoom?.roomCode) {
+          const roomRes = await apiFetch(
+            `/api/rooms?roomCode=${encodeURIComponent(activeRoom.roomCode)}`
+          );
+          if (roomRes.ok) {
+            const roomData = await roomRes.json();
+            if (roomData.room) {
+              setActiveRoom(roomData.room);
+              if (Array.isArray(roomData.room.chat)) {
+                setChatMessages(roomData.room.chat);
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignore transient network errors
+      }
+    };
+
+    pollInvitesAndRoom();
+    const timer = window.setInterval(pollInvitesAndRoom, 5000);
+    return () => window.clearInterval(timer);
+  }, [currentUser, activeRoom?.roomCode]);
+
+  // Auto-join room when user opens a shared Invite Link (?room=RK-XXXX)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room');
+      if (roomParam) {
+        const cleaned = roomParam.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+        if (cleaned) {
+          void handleJoinRoom(cleaned, humanSeatRef.current);
+          setIsMultiplayerOpen(true);
+          params.delete('room');
+          const nextSearch = params.toString();
+          const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
+          window.history.replaceState({}, '', nextUrl);
+        }
+      }
+    } catch {
+      // Ignore URL parsing errors
     }
-  }, []);
+  }, [handleJoinRoom]);
 
   // Initialize Three.js Scene
   useEffect(() => {
@@ -1034,6 +1209,10 @@ export default function App() {
       {phase === 'title' && (
         <TitleScreen
           onStart={() => startNewRound('A', 'B', humanSeat)}
+          onJoinByRoomCode={(code) => {
+            void handleJoinRoom(code, humanSeat);
+            startNewRound('A', 'B', humanSeat);
+          }}
           onOpenMultiplayer={() => setIsMultiplayerOpen(true)}
           onOpenProfile={() => setIsProfileOpen(true)}
           userDisplayName={currentUser?.displayName}
@@ -1059,6 +1238,12 @@ export default function App() {
             activeRoom ? Object.keys(activeRoom.occupiedSeats).length : 1
           }
           occupiedSeats={activeRoom?.occupiedSeats}
+          incomingInvite={incomingInvites[0] || null}
+          onAcceptInvite={(inv) => {
+            handleDismissInvite(inv.id);
+            void handleJoinRoom(inv.roomCode, humanSeat);
+          }}
+          onDismissInvite={handleDismissInvite}
           onOpenMultiplayer={() => setIsMultiplayerOpen(true)}
           onOpenProfile={() => setIsProfileOpen(true)}
           onOpenSettings={() => setIsSettingsOpen(true)}
@@ -1139,7 +1324,19 @@ export default function App() {
           currentUser?.email?.split('@')[0] ||
           `VIP-${humanSeat}`
         }
-        onJoinRoom={handleJoinRoom}
+        playerId={currentUser?.playerId || currentUser?.uid}
+        incomingInvites={incomingInvites}
+        onAcceptInvite={(inv) => {
+          handleDismissInvite(inv.id);
+          void handleJoinRoom(inv.roomCode, humanSeat);
+          if (phase === 'title') {
+            startNewRound('A', 'B', humanSeat);
+          }
+        }}
+        onDismissInvite={handleDismissInvite}
+        onJoinRoom={(code, seat) => {
+          void handleJoinRoom(code, seat);
+        }}
         onLeaveRoom={handleLeaveRoom}
         onSelectSeat={handleSelectHumanSeat}
         onSendChat={handleSendChat}
