@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for onboarding the environment to Vercel following https://vercel.com/get-started.md and configuring SPA production routing for Royal Katti 3D.",
-  "updatedAt": "2026-11-02T17:51:32.575864091Z",
+  "summary": "Implementation plan to fix Email Login, Registration, Password Reset, and Google Sign-In on external browsers and Vercel deployments (kat-pan.vercel.app) using a Cloud Run API + automatic local Web Crypto fallback and a Cross-Domain Google Auth Bridge + instant fallback login.",
+  "updatedAt": "2026-11-03T11:29:09.403923038Z",
   "requestFeedback": true,
   "userFacing": true
 }

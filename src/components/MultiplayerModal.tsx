@@ -14,6 +14,7 @@ import {
   LogOut,
 } from 'lucide-react';
 import { SeatId } from '../game/types';
+import { apiFetch } from '../utils/apiClient';
 
 export interface MultiplayerRoomSummary {
   roomCode: string;
@@ -84,7 +85,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
   const fetchRooms = async () => {
     setLoadingRooms(true);
     try {
-      const res = await fetch('/api/rooms');
+      const res = await apiFetch('/api/rooms');
       if (res.ok) {
         const data = await res.json();
         setRooms(data.rooms || []);
@@ -109,7 +110,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
     setError(null);
     setCreatingRoom(true);
     try {
-      const res = await fetch('/api/rooms', {
+      const res = await apiFetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -127,7 +128,7 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
         onJoinRoom(data.room.roomCode, humanSeat);
       }
     } catch {
-      setError('Network error creating room.');
+      setError('Could not create room.');
     } finally {
       setCreatingRoom(false);
     }

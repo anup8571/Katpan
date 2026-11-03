@@ -38,6 +38,7 @@ import {
   RoomChatMessage,
 } from './components/MultiplayerModal';
 import { SettingsModal } from './components/SettingsModal';
+import { apiFetch, getWebSocketUrl } from './utils/apiClient';
 
 interface LiveRoomState {
   roomCode: string;
@@ -222,7 +223,7 @@ export default function App() {
 
   useEffect(() => {
     if (!authToken) return;
-    fetch('/api/auth/me', {
+    apiFetch('/api/auth/me', {
       headers: { Authorization: `Bearer ${authToken}` },
     })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
@@ -244,8 +245,7 @@ export default function App() {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       return wsRef.current;
     }
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const wsUrl = getWebSocketUrl();
     const ws = new WebSocket(wsUrl);
 
     ws.onmessage = (event) => {
@@ -842,10 +842,10 @@ export default function App() {
         };
       });
 
-      // Persist round result to Cloud SQL if user is logged in
+      // Persist round result to Cloud SQL / Local Vault if user is logged in
       const savedToken = localStorage.getItem(AUTH_TOKEN_KEY);
       if (savedToken) {
-        fetch('/api/sessions', {
+        apiFetch('/api/sessions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
