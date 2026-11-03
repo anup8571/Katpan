@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan to fix Email Login, Registration, Password Reset, and Google Sign-In on external browsers and Vercel deployments (kat-pan.vercel.app) using a Cloud Run API + automatic local Web Crypto fallback and a Cross-Domain Google Auth Bridge + instant fallback login.",
-  "updatedAt": "2026-11-03T11:29:09.403923038Z",
+  "summary": "Implementation plan to redesign the Auth Modal into a clean, professional 2-tab (Login & Register) interface with inline Forgot Password and post-registration 6-digit verification, and fix backend/Vercel API reliability so Registration, Verification, Player ID Login, and Password Reset work seamlessly everywhere.",
+  "updatedAt": "2026-11-03T12:48:47.896087610Z",
   "requestFeedback": true,
   "userFacing": true
 }

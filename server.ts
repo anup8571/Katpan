@@ -270,18 +270,28 @@ async function startServer() {
     try {
       const { playerId, email, password, displayName, preferredSeat } = req.body || {};
       const cleanEmail = String(email || '').trim().toLowerCase();
-      const rawPlayerId = String(playerId || displayName || cleanEmail.split('@')[0] || '')
+      const cleanName =
+        String(displayName || playerId || cleanEmail.split('@')[0] || 'Royal Player').trim();
+
+      const baseSlug = String(playerId || displayName || cleanEmail.split('@')[0] || 'rk')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '')
+        .slice(0, 14);
+      let candidatePlayerId =
+        baseSlug.length >= 3
+          ? `${baseSlug}_${crypto.randomInt(100, 999)}`
+          : `rk_${crypto.randomInt(1000, 9999)}`;
+
+      // If the user explicitly provided a custom playerId that has digits/underscores, try it first
+      const explicitSlug = String(playerId || '')
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9_.-]/g, '');
-      const cleanPlayerId = rawPlayerId || `player_${crypto.randomInt(1000, 9999)}`;
-      const cleanName = String(displayName || cleanPlayerId).trim();
-
-      if (cleanPlayerId.length < 3) {
-        return res.status(400).json({
-          error: 'Player ID must be at least 3 characters (letters, numbers, or underscores).',
-        });
+      if (explicitSlug.length >= 3) {
+        candidatePlayerId = explicitSlug;
       }
+
       if (!cleanEmail || !cleanEmail.includes('@')) {
         return res.status(400).json({ error: 'Please enter a valid email address.' });
       }
@@ -300,8 +310,16 @@ async function startServer() {
       const existingById = await db
         .select()
         .from(users)
-        .where(sql`LOWER(${users.uid}) = ${cleanPlayerId}`)
+        .where(sql`LOWER(${users.uid}) = ${candidatePlayerId}`)
         .limit(1);
+
+      // If candidatePlayerId is already used by another user, append a unique 4-digit tag automatically
+      if (
+        existingById.length > 0 &&
+        (!existingByEmail.length || existingById[0].id !== existingByEmail[0].id)
+      ) {
+        candidatePlayerId = `${baseSlug || 'rk'}_${crypto.randomInt(1000, 9999)}`;
+      }
 
       const passwordHash = hashPassword(String(password));
       const validSeats: SeatId[] = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -311,15 +329,11 @@ async function startServer() {
 
       if (existingByEmail.length > 0) {
         const existing = existingByEmail[0];
-        // If existing account was unverified or had no password hash yet, update it and send verification code
         if (!existing.passwordHash || existing.authProvider === 'email_unverified') {
           const [updated] = await db
             .update(users)
             .set({
-              uid:
-                existingById.length === 0 || existingById[0].id === existing.id
-                  ? cleanPlayerId
-                  : existing.uid,
+              uid: candidatePlayerId,
               displayName: cleanName,
               passwordHash,
               authProvider: 'email_unverified',
@@ -331,18 +345,14 @@ async function startServer() {
           targetUser = updated;
         } else {
           return res.status(409).json({
-            error: 'An account with this email already exists. Please sign in or reset your password.',
+            error: 'An account with this email already exists. Please Login or use Forgot Password.',
           });
         }
-      } else if (existingById.length > 0) {
-        return res.status(409).json({
-          error: `Player ID "${cleanPlayerId}" is already taken. Please choose another Player ID.`,
-        });
       } else {
         const [created] = await db
           .insert(users)
           .values({
-            uid: cleanPlayerId,
+            uid: candidatePlayerId,
             email: cleanEmail,
             displayName: cleanName,
             passwordHash,
@@ -366,11 +376,11 @@ async function startServer() {
       return res.status(201).json({
         requiresVerification: true,
         playerId: targetUser.uid,
+        displayName: targetUser.displayName,
         email: targetUser.email,
         verificationCode: code,
         expiresAt: expiresAt.toISOString(),
-        message:
-          'Account created! Enter the 6-digit email verification code below to verify and activate your profile.',
+        message: 'Enter your 6-digit verification code to verify and sign in.',
       });
     } catch (error) {
       console.error('Registration error:', error);
@@ -953,15 +963,35 @@ async function startServer() {
   // 4. HTTP + WEBSOCKET SERVER ATTACHMENT ON PORT 3000
   // =========================================================================
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({
+    noServer: true,
+    handleProtocols: (protocols) => {
+      if (protocols.has('vite-hmr')) return 'vite-hmr';
+      return protocols.values().next().value || false;
+    },
+  });
 
   server.on('upgrade', (request, socket, head) => {
-    const pathname = new URL(request.url || '/', `http://${request.headers.host}`).pathname;
+    const pathname = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`).pathname;
+    const protocol = String(request.headers['sec-websocket-protocol'] || '');
+
+    if (protocol.includes('vite-hmr')) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        ws.send(JSON.stringify({ type: 'connected' }));
+        ws.on('message', () => {});
+        ws.on('error', () => {});
+      });
+      return;
+    }
+
     if (pathname === '/ws') {
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
       });
+      return;
     }
+
+    socket.destroy();
   });
 
   wss.on('connection', (ws) => {
@@ -1151,24 +1181,50 @@ async function startServer() {
   // 5. VITE DEV MIDDLEWARE OR PRODUCTION STATIC ASSETS
   // =========================================================================
   if (process.env.NODE_ENV !== 'production') {
-    let viteMiddleware: any = null;
-    app.use((req, res, next) => {
-      if (viteMiddleware) {
-        return viteMiddleware(req, res, next);
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        allowedHosts: true,
+        cors: true,
+        hmr: false,
+        watch: null,
+      },
+      appType: 'spa',
+    });
+
+    // Self-unregister any stale PWA service workers that may have been registered in dev mode
+    app.get(['/sw.js', '/dev-sw.js', '/registerSW.js'], (_req, res) => {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(
+        "if (typeof self !== 'undefined' && self.registration) { self.addEventListener('install', () => self.skipWaiting()); self.addEventListener('activate', () => { self.registration.unregister(); if (typeof caches !== 'undefined') { caches.keys().then(keys => keys.forEach(k => caches.delete(k))); } }); }"
+      );
+    });
+
+    // Ensure /@vite/client never attempts to connect to unreachable port 24678 on Cloud Run when hmr: false
+    app.get('/@vite/client', async (req, res, next) => {
+      try {
+        const result = await vite.transformRequest('/@vite/client');
+        if (result?.code) {
+          const patched = result.code
+            .replace(/const hmrPort = \d+;/g, 'const hmrPort = null;')
+            .replace(/const directSocketHost = "[^"]*";/g, 'const directSocketHost = `${importMetaUrl.host}/`;');
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          return res.status(200).send(patched);
+        }
+      } catch (_err) {
+        // Fall through to vite.middlewares
       }
       next();
     });
 
+    app.use(vite.middlewares);
+
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`Royal Katti 3D Full-Stack + Multiplayer Server listening on http://0.0.0.0:${PORT}`);
     });
-
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    viteMiddleware = vite.middlewares;
   } else {
     const distPath = path.resolve(process.cwd(), 'dist');
     app.use(express.static(distPath));

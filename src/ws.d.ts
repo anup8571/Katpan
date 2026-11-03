@@ -17,7 +17,12 @@ declare module 'ws' {
   }
 
   export class WebSocketServer extends EventEmitter {
-    constructor(options?: { noServer?: boolean; port?: number; path?: string });
+    constructor(options?: {
+      noServer?: boolean;
+      port?: number;
+      path?: string;
+      handleProtocols?: (protocols: Set<string>, request: IncomingMessage) => string | false;
+    });
     handleUpgrade(
       request: IncomingMessage,
       socket: Duplex,
