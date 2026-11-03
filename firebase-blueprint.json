@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Registered Royal Katti player profile with unique Player ID, stats, and preferred seat.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID owning this profile document.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "playerId": {
+          "type": "string",
+          "description": "Unique Player ID used for login and table display (e.g. anup_357).",
+          "minLength": 3,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Player display username.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified player email address.",
+          "minLength": 3,
+          "maxLength": 128
+        },
+        "preferredSeat": {
+          "type": "string",
+          "description": "Preferred table seat A-F.",
+          "enum": ["A", "B", "C", "D", "E", "F"],
+          "minLength": 1,
+          "maxLength": 1
+        },
+        "coins": {
+          "type": "integer",
+          "description": "Current Royal Coins balance."
+        },
+        "highestBalance": {
+          "type": "integer",
+          "description": "Highest Royal Coins stack achieved."
+        },
+        "totalWins": {
+          "type": "integer",
+          "description": "Total winning hands."
+        },
+        "totalRounds": {
+          "type": "integer",
+          "description": "Total hands played."
+        },
+        "emailVerified": {
+          "type": "boolean",
+          "description": "Whether the player's email has been verified."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was last updated."
+        }
+      },
+      "required": [
+        "uid",
+        "playerId",
+        "displayName",
+        "email",
+        "preferredSeat",
+        "coins",
+        "highestBalance",
+        "totalWins",
+        "totalRounds",
+        "emailVerified",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Stores verified player profiles indexed by Firebase Auth UID."
+    }
+  }
+}

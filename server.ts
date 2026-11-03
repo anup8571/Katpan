@@ -21,9 +21,36 @@ import {
   hashResetCode,
   signSessionToken,
 } from './src/utils/security.ts';
+import { sendVerificationEmail } from './src/utils/mailer.ts';
+import firebaseConfig from './firebase-applet-config.json' with { type: 'json' };
 import { SeatId } from './src/game/types.ts';
 
 const PORT = 3000;
+
+async function verifyFirebaseIdTokenEmail(idToken: string): Promise<string | null> {
+  if (!idToken || !firebaseConfig.apiKey) return null;
+  try {
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseConfig.apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      users?: Array<{ email?: string; emailVerified?: boolean }>;
+    };
+    const fbUser = data?.users?.[0];
+    if (fbUser && fbUser.email && fbUser.emailVerified) {
+      return fbUser.email.trim().toLowerCase();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 interface ConnectedPeer {
   ws: WebSocket;
@@ -373,14 +400,22 @@ async function startServer() {
         expiresAt,
       });
 
+      const emailDispatch = await sendVerificationEmail({
+        to: targetUser.email,
+        playerId: targetUser.uid,
+        code,
+        purpose: 'verify',
+      });
+
       return res.status(201).json({
         requiresVerification: true,
         playerId: targetUser.uid,
         displayName: targetUser.displayName,
         email: targetUser.email,
-        verificationCode: code,
+        emailSent: emailDispatch.sent,
+        emailProvider: emailDispatch.provider,
         expiresAt: expiresAt.toISOString(),
-        message: 'Enter your 6-digit verification code to verify and sign in.',
+        message: 'Check your email inbox to verify your account and sign in.',
       });
     } catch (error) {
       console.error('Registration error:', error);
@@ -390,13 +425,13 @@ async function startServer() {
 
   app.post('/api/auth/verify-email', async (req, res) => {
     try {
-      const { identifier, email, code } = req.body || {};
+      const { identifier, email, code, firebaseIdToken } = req.body || {};
       const lookup = String(identifier || email || '').trim();
       const cleanCode = String(code || '').trim();
 
-      if (!lookup || !cleanCode) {
+      if (!lookup) {
         return res.status(400).json({
-          error: 'Player ID / Email and 6-digit verification code are required.',
+          error: 'Player ID or Email is required.',
         });
       }
 
@@ -407,8 +442,53 @@ async function startServer() {
         });
       }
 
-      const expectedHash = hashResetCode(cleanCode);
       const now = new Date();
+
+      // Path A: Verified via Firebase Auth email verification link or verified Google email ownership
+      if (firebaseIdToken) {
+        const verifiedEmail = await verifyFirebaseIdTokenEmail(String(firebaseIdToken));
+        if (!verifiedEmail) {
+          return res.status(400).json({
+            error: 'Your email has not been verified in Firebase yet. Please click the verification link in your email first.',
+          });
+        }
+        if (verifiedEmail !== user.email.trim().toLowerCase()) {
+          return res.status(400).json({
+            error: `Verified email (${verifiedEmail}) does not match account email (${user.email}).`,
+          });
+        }
+
+        const [verifiedUser] = await db
+          .update(users)
+          .set({
+            authProvider: 'email_verified',
+            updatedAt: now,
+          })
+          .where(eq(users.id, user.id))
+          .returning();
+
+        const sessionToken = signSessionToken({
+          userId: verifiedUser.id,
+          uid: verifiedUser.uid,
+          email: verifiedUser.email,
+        });
+
+        return res.json({
+          ok: true,
+          message: 'Email verified! Your profile is now active.',
+          token: sessionToken,
+          user: sanitizeUser(verifiedUser),
+        });
+      }
+
+      // Path B: Verified via 6-digit email OTP code
+      if (!cleanCode) {
+        return res.status(400).json({
+          error: 'Please enter the 6-digit verification code sent to your email.',
+        });
+      }
+
+      const expectedHash = hashResetCode(cleanCode);
 
       const matchingTokens = await db
         .select()
@@ -426,7 +506,7 @@ async function startServer() {
 
       if (matchingTokens.length === 0) {
         return res.status(400).json({
-          error: 'Invalid or expired 6-digit verification code. Click Resend Code to get a new one.',
+          error: 'Invalid or expired 6-digit verification code. Check your email or click Resend.',
         });
       }
 
@@ -484,23 +564,31 @@ async function startServer() {
         expiresAt,
       });
 
+      const emailDispatch = await sendVerificationEmail({
+        to: user.email,
+        playerId: user.uid,
+        code,
+        purpose: 'verify',
+      });
+
       return res.json({
         ok: true,
         playerId: user.uid,
         email: user.email,
-        verificationCode: code,
+        emailSent: emailDispatch.sent,
+        emailProvider: emailDispatch.provider,
         expiresAt: expiresAt.toISOString(),
-        message: 'A fresh 6-digit email verification code has been generated.',
+        message: 'Verification email resent. Please check your inbox.',
       });
     } catch (error) {
       console.error('Resend verification error:', error);
-      return res.status(500).json({ error: 'Could not resend verification code.' });
+      return res.status(500).json({ error: 'Could not resend verification email.' });
     }
   });
 
   app.post('/api/auth/login', async (req, res) => {
     try {
-      const { identifier, email, password } = req.body || {};
+      const { identifier, email, password, firebaseIdToken, firestoreProfile } = req.body || {};
       const lookup = String(identifier || email || '').trim();
 
       if (!lookup || !password) {
@@ -509,23 +597,83 @@ async function startServer() {
         });
       }
 
-      const user = await findUserByIdentifier(lookup);
+      let user = await findUserByIdentifier(lookup);
+
+      // Verify Firebase ID token if provided (supports cross-device login & Firebase password reset links)
+      const verifiedFirebaseEmail = firebaseIdToken
+        ? await verifyFirebaseIdTokenEmail(String(firebaseIdToken))
+        : null;
+
+      if (!user && verifiedFirebaseEmail) {
+        user = await findUserByIdentifier(verifiedFirebaseEmail);
+        if (!user) {
+          const restoredPlayerId = String(
+            firestoreProfile?.playerId ||
+              `${verifiedFirebaseEmail.split('@')[0].replace(/[^a-z0-9_]/gi, '').slice(0, 12) || 'player'}_${Math.floor(100 + Math.random() * 900)}`
+          ).toLowerCase();
+          const [created] = await db
+            .insert(users)
+            .values({
+              uid: restoredPlayerId,
+              email: verifiedFirebaseEmail,
+              displayName: String(
+                firestoreProfile?.displayName || restoredPlayerId
+              ).slice(0, 64),
+              passwordHash: hashPassword(String(password)),
+              authProvider: 'email_verified',
+              preferredSeat: ['A', 'B', 'C', 'D', 'E', 'F'].includes(
+                firestoreProfile?.preferredSeat
+              )
+                ? firestoreProfile.preferredSeat
+                : 'D',
+              coins:
+                typeof firestoreProfile?.coins === 'number'
+                  ? Math.max(50, Math.round(firestoreProfile.coins))
+                  : 1000,
+              highestBalance:
+                typeof firestoreProfile?.highestBalance === 'number'
+                  ? Math.max(1000, Math.round(firestoreProfile.highestBalance))
+                  : 1000,
+            })
+            .returning();
+          user = created;
+        }
+      }
+
       if (!user) {
         return res.status(401).json({
-          error: 'No account found with that Player ID or Email. Please Sign Up first.',
+          error: 'No account found with that Player ID or Email. Please Register first.',
         });
       }
 
-      if (!user.passwordHash) {
-        return res.status(401).json({
-          error:
-            'This account does not have a password set yet. Use "Reset Pass" to set your password.',
-        });
-      }
+      const firebaseEmailMatchesUser =
+        Boolean(verifiedFirebaseEmail) &&
+        verifiedFirebaseEmail === user.email.trim().toLowerCase();
 
-      const isValid = verifyPassword(String(password), user.passwordHash);
-      if (!isValid) {
-        return res.status(401).json({ error: 'Invalid Player ID/Email or password.' });
+      if (!firebaseEmailMatchesUser) {
+        if (!user.passwordHash) {
+          return res.status(401).json({
+            error:
+              'This account does not have a password set yet. Use "Forgot Password?" to set your password.',
+          });
+        }
+
+        const isValid = verifyPassword(String(password), user.passwordHash);
+        if (!isValid) {
+          return res.status(401).json({ error: 'Invalid Player ID/Email or password.' });
+        }
+      } else {
+        // Sync latest password hash & verified status from Firebase Auth
+        const [synced] = await db
+          .update(users)
+          .set({
+            passwordHash: hashPassword(String(password)),
+            authProvider: 'email_verified',
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, user.id))
+          .returning();
+        if (synced) user = synced;
       }
 
       if (user.authProvider === 'email_unverified') {
@@ -536,12 +684,19 @@ async function startServer() {
           tokenHash,
           expiresAt,
         });
+        const emailDispatch = await sendVerificationEmail({
+          to: user.email,
+          playerId: user.uid,
+          code,
+          purpose: 'verify',
+        });
         return res.status(403).json({
           requiresVerification: true,
           playerId: user.uid,
           email: user.email,
-          verificationCode: code,
-          error: 'Please verify your email with the 6-digit code to complete sign in.',
+          emailSent: emailDispatch.sent,
+          emailProvider: emailDispatch.provider,
+          error: 'Please verify your email address to complete sign in.',
         });
       }
 
@@ -588,29 +743,37 @@ async function startServer() {
         expiresAt,
       });
 
+      const emailDispatch = await sendVerificationEmail({
+        to: user.email,
+        playerId: user.uid,
+        code,
+        purpose: 'reset',
+      });
+
       return res.json({
         ok: true,
         playerId: user.uid,
         email: user.email,
-        message: '6-digit password reset code generated and stored with SHA-256 hash.',
-        previewResetCode: code,
+        emailSent: emailDispatch.sent,
+        emailProvider: emailDispatch.provider,
+        message: 'Password reset instructions have been sent to your email.',
         expiresAt: expiresAt.toISOString(),
       });
     } catch (error) {
       console.error('Forgot password error:', error);
-      return res.status(500).json({ error: 'Failed to generate reset code.' });
+      return res.status(500).json({ error: 'Failed to request password reset.' });
     }
   });
 
   app.post('/api/auth/reset-password', async (req, res) => {
     try {
-      const { identifier, email, code, newPassword } = req.body || {};
+      const { identifier, email, code, newPassword, firebaseIdToken } = req.body || {};
       const lookup = String(identifier || email || '').trim();
       const cleanCode = String(code || '').trim();
 
-      if (!lookup || !cleanCode || !newPassword) {
+      if (!lookup || !newPassword) {
         return res.status(400).json({
-          error: 'Player ID / Email, 6-digit reset code, and new password are required.',
+          error: 'Player ID / Email and new password are required.',
         });
       }
       if (String(newPassword).length < 6) {
@@ -626,8 +789,47 @@ async function startServer() {
         });
       }
 
-      const expectedHash = hashResetCode(cleanCode);
       const now = new Date();
+
+      if (firebaseIdToken) {
+        const verifiedEmail = await verifyFirebaseIdTokenEmail(String(firebaseIdToken));
+        if (!verifiedEmail || verifiedEmail !== user.email.trim().toLowerCase()) {
+          return res.status(400).json({
+            error: 'Verified email does not match this account.',
+          });
+        }
+        const newPasswordHash = hashPassword(String(newPassword));
+        const [updatedUser] = await db
+          .update(users)
+          .set({
+            passwordHash: newPasswordHash,
+            authProvider: 'email_verified',
+            updatedAt: now,
+          })
+          .where(eq(users.id, user.id))
+          .returning();
+
+        const sessionToken = signSessionToken({
+          userId: updatedUser.id,
+          uid: updatedUser.uid,
+          email: updatedUser.email,
+        });
+
+        return res.json({
+          ok: true,
+          message: 'Password updated!',
+          token: sessionToken,
+          user: sanitizeUser(updatedUser),
+        });
+      }
+
+      if (!cleanCode) {
+        return res.status(400).json({
+          error: 'Please enter the 6-digit reset code sent to your email.',
+        });
+      }
+
+      const expectedHash = hashResetCode(cleanCode);
 
       const matchingTokens = await db
         .select()

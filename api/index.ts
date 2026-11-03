@@ -1,10 +1,14 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import tls from 'node:tls';
+import net from 'node:net';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const SCRYPT_KEYLEN = 64;
 const TOKEN_SECRET = process.env.AUTH_TOKEN_SECRET || 'royal-katti-cloudsql-rls-secret-2026';
 const TMP_DB_PATH = '/tmp/royalkatti_serverless_db_v3.json';
+const FIREBASE_WEB_API_KEY =
+  process.env.FIREBASE_API_KEY || 'AIzaSyCP9aCqJt8vJAcF0Oss00iJswZb8x0FPcI';
 
 function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16);
@@ -64,6 +68,241 @@ function verifyPayload<T = Record<string, any>>(token: string): T | null {
   } catch {
     return null;
   }
+}
+
+async function verifyFirebaseIdTokenEmail(idToken: string): Promise<string | null> {
+  if (!idToken || !FIREBASE_WEB_API_KEY) return null;
+  try {
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_WEB_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      users?: Array<{ email?: string; emailVerified?: boolean }>;
+    };
+    const fbUser = data?.users?.[0];
+    if (fbUser && fbUser.email && fbUser.emailVerified) {
+      return fbUser.email.trim().toLowerCase();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function buildHtmlEmail(params: {
+  title: string;
+  subtitle: string;
+  playerId: string;
+  code: string;
+}): string {
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; background: #090d16; color: #f8fafc; border-radius: 16px; padding: 28px; border: 1px solid rgba(251, 191, 36, 0.25);">
+      <h2 style="margin: 0 0 8px; color: #fbbf24; font-size: 20px;">${params.title}</h2>
+      <p style="margin: 0 0 20px; color: #cbd5e1; font-size: 14px; line-height: 1.5;">${params.subtitle}</p>
+      <div style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+        <div style="font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Your Player ID</div>
+        <div style="font-family: monospace; font-size: 16px; font-weight: 700; color: #fcd34d; margin-bottom: 14px;">${params.playerId}</div>
+        <div style="font-size: 12px; color: #94a3b8; margin-bottom: 4px;">6-Digit Security Code</div>
+        <div style="font-family: monospace; font-size: 28px; font-weight: 800; letter-spacing: 6px; color: #34d399;">${params.code}</div>
+      </div>
+      <p style="margin: 0; color: #64748b; font-size: 12px;">This code expires in 15 minutes. Never share this code with anyone.</p>
+    </div>
+  `;
+}
+
+async function sendViaSmtp(params: {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<boolean> {
+  return new Promise((resolve) => {
+    const isImplicitTls = params.port === 465;
+    const socket: net.Socket | tls.TLSSocket = isImplicitTls
+      ? tls.connect({ host: params.host, port: params.port, servername: params.host })
+      : net.createConnection({ host: params.host, port: params.port });
+
+    let activeSocket: net.Socket | tls.TLSSocket = socket;
+    let step = 0;
+    let resolved = false;
+
+    const finish = (ok: boolean) => {
+      if (resolved) return;
+      resolved = true;
+      try {
+        activeSocket.destroy();
+      } catch {
+        // ignore
+      }
+      resolve(ok);
+    };
+
+    const timeout = setTimeout(() => finish(false), 8000);
+    const sendLine = (line: string) => activeSocket.write(line + '\r\n');
+
+    const onData = (buf: Buffer) => {
+      const text = buf.toString('utf8');
+      const code = parseInt(text.slice(0, 3), 10);
+      const lines = text.trim().split('\r\n');
+      const lastLine = lines[lines.length - 1] || '';
+      if (lastLine.length >= 4 && lastLine[3] === '-') return;
+
+      if (step === 0 && code === 220) {
+        step = isImplicitTls ? 2 : 1;
+        sendLine('EHLO royalkatti.app');
+      } else if (step === 1 && code === 250) {
+        step = 15;
+        sendLine('STARTTLS');
+      } else if (step === 15 && code === 220) {
+        activeSocket.removeAllListeners('data');
+        const tlsSock = tls.connect({ socket: activeSocket, servername: params.host });
+        activeSocket = tlsSock;
+        tlsSock.on('data', onData);
+        tlsSock.on('error', () => {
+          clearTimeout(timeout);
+          finish(false);
+        });
+        step = 2;
+        sendLine('EHLO royalkatti.app');
+      } else if (step === 2 && code === 250) {
+        step = 3;
+        sendLine('AUTH LOGIN');
+      } else if (step === 3 && code === 334) {
+        step = 4;
+        sendLine(Buffer.from(params.user, 'utf8').toString('base64'));
+      } else if (step === 4 && code === 334) {
+        step = 5;
+        sendLine(Buffer.from(params.pass, 'utf8').toString('base64'));
+      } else if (step === 5 && code === 235) {
+        step = 6;
+        sendLine(`MAIL FROM:<${params.from}>`);
+      } else if (step === 6 && code === 250) {
+        step = 7;
+        sendLine(`RCPT TO:<${params.to}>`);
+      } else if (step === 7 && (code === 250 || code === 251)) {
+        step = 8;
+        sendLine('DATA');
+      } else if (step === 8 && code === 354) {
+        step = 9;
+        const message = [
+          `From: "Royal Katti VIP" <${params.from}>`,
+          `To: <${params.to}>`,
+          `Subject: ${params.subject}`,
+          `MIME-Version: 1.0`,
+          `Content-Type: text/html; charset=utf-8`,
+          ``,
+          params.html,
+          `.`,
+        ].join('\r\n');
+        sendLine(message);
+      } else if (step === 9 && code === 250) {
+        step = 10;
+        sendLine('QUIT');
+        clearTimeout(timeout);
+        finish(true);
+      } else if (code >= 400) {
+        clearTimeout(timeout);
+        finish(false);
+      }
+    };
+
+    activeSocket.on('data', onData);
+    activeSocket.on('error', () => {
+      clearTimeout(timeout);
+      finish(false);
+    });
+  });
+}
+
+async function dispatchCodeEmail(params: {
+  to: string;
+  playerId: string;
+  code: string;
+  purpose: 'verify' | 'reset';
+}): Promise<{ sent: boolean; provider: string }> {
+  const subject =
+    params.purpose === 'verify'
+      ? `${params.code} is your Royal Katti verification code`
+      : `${params.code} is your Royal Katti password reset code`;
+
+  const html = buildHtmlEmail({
+    title:
+      params.purpose === 'verify'
+        ? 'Verify Your Royal Katti Account'
+        : 'Reset Your Royal Katti Password',
+    subtitle:
+      params.purpose === 'verify'
+        ? 'Enter the 6-digit verification code below in the Royal Katti app to activate your Player ID.'
+        : 'Enter the 6-digit password reset code below in the Royal Katti app to set a new password.',
+    playerId: params.playerId,
+    code: params.code,
+  });
+
+  const resendKey = process.env.RESEND_API_KEY?.trim();
+  if (resendKey) {
+    try {
+      const fromAddr = process.env.EMAIL_FROM?.trim() || 'Royal Katti <onboarding@resend.dev>';
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ from: fromAddr, to: [params.to], subject, html }),
+      });
+      if (res.ok) return { sent: true, provider: 'resend' };
+    } catch {
+      // fall through
+    }
+  }
+
+  const brevoKey = process.env.BREVO_API_KEY?.trim();
+  if (brevoKey) {
+    try {
+      const senderEmail = process.env.EMAIL_FROM?.trim() || 'noreply@royalkatti.app';
+      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: { 'api-key': brevoKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender: { name: 'Royal Katti VIP', email: senderEmail },
+          to: [{ email: params.to }],
+          subject,
+          htmlContent: html,
+        }),
+      });
+      if (res.ok) return { sent: true, provider: 'brevo' };
+    } catch {
+      // fall through
+    }
+  }
+
+  const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim();
+  const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').trim();
+  if (smtpUser && smtpPass) {
+    const ok = await sendViaSmtp({
+      host: (process.env.SMTP_HOST || 'smtp.gmail.com').trim(),
+      port: Number(process.env.SMTP_PORT || 465),
+      user: smtpUser,
+      pass: smtpPass,
+      from: (process.env.EMAIL_FROM || smtpUser).trim(),
+      to: params.to,
+      subject,
+      html,
+    });
+    if (ok) return { sent: true, provider: 'smtp' };
+  }
+
+  return { sent: false, provider: 'none' };
 }
 
 interface ServerUserRecord {
@@ -320,7 +559,14 @@ export default async function handler(
     });
     saveServerStore(store);
 
-    // Stateless signed verification token so cold-start serverless instances can also verify
+    const emailDispatch = await dispatchCodeEmail({
+      to: targetUser.email,
+      playerId: targetUser.uid,
+      code,
+      purpose: 'verify',
+    });
+
+    // Stateless signed verification token (contains ONLY tokenHash, never plaintext code)
     const verificationToken = signPayload(
       {
         user: targetUser,
@@ -334,56 +580,96 @@ export default async function handler(
       playerId: targetUser.uid,
       displayName: targetUser.displayName,
       email: targetUser.email,
-      verificationCode: code,
+      emailSent: emailDispatch.sent,
+      emailProvider: emailDispatch.provider,
       verificationToken,
       expiresAt: expiresAt.toISOString(),
-      message: 'Enter your 6-digit verification code to verify and sign in.',
+      message: 'Check your email inbox to verify your account and sign in.',
     });
   }
 
   // 2. Verify Email
   if (pathname === '/api/auth/verify-email' && method === 'POST') {
-    const { identifier, email, code, verificationToken } = body;
+    const { identifier, email, code, verificationToken, firebaseIdToken } = body;
     const lookup = String(identifier || email || '').trim();
     const cleanCode = String(code || '').trim();
 
+    let user = findUser(store, lookup);
+    const decodedToken = verificationToken
+      ? verifyPayload<{ user: ServerUserRecord; tokenHash: string }>(verificationToken)
+      : null;
+
+    if (!user && decodedToken?.user) {
+      user = decodedToken.user;
+    }
+
+    // Path A: Verified via Firebase Auth email verification link or verified Google email ownership
+    if (firebaseIdToken) {
+      const verifiedEmail = await verifyFirebaseIdTokenEmail(String(firebaseIdToken));
+      if (!verifiedEmail) {
+        return sendJson(res, 400, {
+          error: 'Your email has not been verified in Firebase yet. Click the verification link in your email first.',
+        });
+      }
+      if (user && verifiedEmail !== user.email.trim().toLowerCase()) {
+        return sendJson(res, 400, {
+          error: `Verified email (${verifiedEmail}) does not match account email (${user.email}).`,
+        });
+      }
+      if (!user) {
+        return sendJson(res, 404, { error: 'Account not found. Please register again.' });
+      }
+      user.authProvider = 'email_verified';
+      user.emailVerified = true;
+      if (!store.users.some((u) => u.email === user!.email)) {
+        store.users.push(user);
+      }
+      saveServerStore(store);
+
+      const token = signPayload({
+        userId: user.id,
+        uid: user.uid,
+        email: user.email,
+        userSnapshot: sanitizeServerUser(user),
+      });
+      return sendJson(res, 200, {
+        ok: true,
+        token,
+        user: sanitizeServerUser(user),
+      });
+    }
+
+    // Path B: Verified via 6-digit email OTP code
     if (!cleanCode) {
-      return sendJson(res, 400, { error: 'Please enter the 6-digit verification code.' });
+      return sendJson(res, 400, { error: 'Please enter the 6-digit verification code sent to your email.' });
     }
 
     const expectedHash = hashResetCode(cleanCode);
-    let user = findUser(store, lookup);
 
-    // Recover user from stateless signed verificationToken if serverless cold-started
-    if (verificationToken) {
-      const decoded = verifyPayload<{ user: ServerUserRecord; tokenHash: string }>(
-        verificationToken
-      );
-      if (decoded && decoded.tokenHash === expectedHash && decoded.user) {
-        if (!user) {
-          user = {
-            ...decoded.user,
-            authProvider: 'email_verified',
-            emailVerified: true,
-          };
-          store.users.push(user);
-        } else {
-          user.authProvider = 'email_verified';
-          user.emailVerified = true;
-        }
-        saveServerStore(store);
-        const token = signPayload({
-          userId: user.id,
-          uid: user.uid,
-          email: user.email,
-          userSnapshot: sanitizeServerUser(user),
-        });
-        return sendJson(res, 200, {
-          ok: true,
-          token,
-          user: sanitizeServerUser(user),
-        });
+    if (decodedToken && decodedToken.tokenHash === expectedHash && decodedToken.user) {
+      user = {
+        ...decodedToken.user,
+        authProvider: 'email_verified',
+        emailVerified: true,
+      };
+      const existingIdx = store.users.findIndex((u) => u.email === user!.email);
+      if (existingIdx >= 0) {
+        store.users[existingIdx] = user;
+      } else {
+        store.users.push(user);
       }
+      saveServerStore(store);
+      const token = signPayload({
+        userId: user.id,
+        uid: user.uid,
+        email: user.email,
+        userSnapshot: sanitizeServerUser(user),
+      });
+      return sendJson(res, 200, {
+        ok: true,
+        token,
+        user: sanitizeServerUser(user),
+      });
     }
 
     if (!user) {
@@ -426,9 +712,13 @@ export default async function handler(
 
   // 3. Resend Verification Code
   if (pathname === '/api/auth/resend-verification' && method === 'POST') {
-    const { identifier, email } = body;
+    const { identifier, email, verificationToken } = body;
     const lookup = String(identifier || email || '').trim();
-    const user = findUser(store, lookup);
+    let user = findUser(store, lookup);
+    if (!user && verificationToken) {
+      const dec = verifyPayload<{ user: ServerUserRecord }>(verificationToken);
+      if (dec?.user) user = dec.user;
+    }
     if (!user) {
       return sendJson(res, 404, { error: 'Account not found.' });
     }
@@ -441,33 +731,95 @@ export default async function handler(
       usedAt: null,
     });
     saveServerStore(store);
-    const verificationToken = signPayload({ user, tokenHash }, 900);
+    const emailDispatch = await dispatchCodeEmail({
+      to: user.email,
+      playerId: user.uid,
+      code,
+      purpose: 'verify',
+    });
+    const nextVerificationToken = signPayload({ user, tokenHash }, 900);
     return sendJson(res, 200, {
       ok: true,
       playerId: user.uid,
       email: user.email,
-      verificationCode: code,
-      verificationToken,
-      message: 'New 6-digit verification code generated.',
+      emailSent: emailDispatch.sent,
+      emailProvider: emailDispatch.provider,
+      verificationToken: nextVerificationToken,
+      message: 'Verification email resent to your inbox.',
     });
   }
 
   // 4. Login
   if (pathname === '/api/auth/login' && method === 'POST') {
-    const { identifier, email, password } = body;
+    const { identifier, email, password, firebaseIdToken, firestoreProfile } = body;
     const lookup = String(identifier || email || '').trim();
     if (!lookup || !password) {
       return sendJson(res, 400, { error: 'Please enter your Email/Player ID and password.' });
     }
-    const user = findUser(store, lookup);
+
+    const verifiedFirebaseEmail = firebaseIdToken
+      ? await verifyFirebaseIdTokenEmail(String(firebaseIdToken))
+      : null;
+
+    let user = findUser(store, lookup);
+    if (!user && verifiedFirebaseEmail) {
+      user = findUser(store, verifiedFirebaseEmail);
+      if (!user) {
+        const restoredPlayerId = String(
+          firestoreProfile?.playerId ||
+            `${verifiedFirebaseEmail.split('@')[0].replace(/[^a-z0-9_]/gi, '').slice(0, 12) || 'player'}_${Math.floor(100 + Math.random() * 900)}`
+        ).toLowerCase();
+        user = {
+          id: Date.now(),
+          uid: restoredPlayerId,
+          playerId: restoredPlayerId,
+          email: verifiedFirebaseEmail,
+          displayName: String(firestoreProfile?.displayName || restoredPlayerId).slice(0, 64),
+          passwordHash: hashPassword(String(password)),
+          authProvider: 'email_verified',
+          emailVerified: true,
+          preferredSeat: ['A', 'B', 'C', 'D', 'E', 'F'].includes(firestoreProfile?.preferredSeat)
+            ? firestoreProfile.preferredSeat
+            : 'D',
+          coins:
+            typeof firestoreProfile?.coins === 'number'
+              ? Math.max(50, Math.round(firestoreProfile.coins))
+              : 1000,
+          highestBalance:
+            typeof firestoreProfile?.highestBalance === 'number'
+              ? Math.max(1000, Math.round(firestoreProfile.highestBalance))
+              : 1000,
+          totalWins: Number(firestoreProfile?.totalWins || 0),
+          totalRounds: Number(firestoreProfile?.totalRounds || 0),
+          hasPasswordHash: true,
+          createdAt: new Date().toISOString(),
+        };
+        store.users.push(user);
+        saveServerStore(store);
+      }
+    }
+
     if (!user) {
       return sendJson(res, 401, {
         error: 'Account not found. Please Register first.',
       });
     }
-    if (!verifyPassword(String(password), user.passwordHash)) {
-      return sendJson(res, 401, { error: 'Invalid Email/Player ID or password.' });
+
+    const firebaseEmailMatchesUser =
+      Boolean(verifiedFirebaseEmail) &&
+      verifiedFirebaseEmail === user.email.trim().toLowerCase();
+
+    if (!firebaseEmailMatchesUser) {
+      if (!verifyPassword(String(password), user.passwordHash)) {
+        return sendJson(res, 401, { error: 'Invalid Email/Player ID or password.' });
+      }
+    } else {
+      user.passwordHash = hashPassword(String(password));
+      user.authProvider = 'email_verified';
+      user.emailVerified = true;
+      saveServerStore(store);
     }
+
     if (user.authProvider === 'email_unverified') {
       const { code, tokenHash, expiresAt } = generateResetCode();
       store.tokens.push({
@@ -478,14 +830,21 @@ export default async function handler(
         usedAt: null,
       });
       saveServerStore(store);
+      const emailDispatch = await dispatchCodeEmail({
+        to: user.email,
+        playerId: user.uid,
+        code,
+        purpose: 'verify',
+      });
       const verificationToken = signPayload({ user, tokenHash }, 900);
       return sendJson(res, 403, {
         requiresVerification: true,
         playerId: user.uid,
         email: user.email,
-        verificationCode: code,
+        emailSent: emailDispatch.sent,
+        emailProvider: emailDispatch.provider,
         verificationToken,
-        error: 'Please verify your 6-digit code to finish activating your account.',
+        error: 'Please verify your email address to finish activating your account.',
       });
     }
     const token = signPayload({
@@ -514,56 +873,94 @@ export default async function handler(
       usedAt: null,
     });
     saveServerStore(store);
+    const emailDispatch = await dispatchCodeEmail({
+      to: user.email,
+      playerId: user.uid,
+      code,
+      purpose: 'reset',
+    });
     const resetToken = signPayload({ user, tokenHash }, 900);
     return sendJson(res, 200, {
       ok: true,
       playerId: user.uid,
       email: user.email,
-      previewResetCode: code,
+      emailSent: emailDispatch.sent,
+      emailProvider: emailDispatch.provider,
       resetToken,
     });
   }
 
   // 6. Reset Password
   if (pathname === '/api/auth/reset-password' && method === 'POST') {
-    const { identifier, email, code, newPassword, resetToken } = body;
+    const { identifier, email, code, newPassword, resetToken, firebaseIdToken } = body;
     const lookup = String(identifier || email || '').trim();
     const cleanCode = String(code || '').trim();
-    if (!cleanCode || !newPassword || String(newPassword).length < 6) {
+    if (!newPassword || String(newPassword).length < 6) {
       return sendJson(res, 400, {
-        error: 'Valid 6-digit code and a new password (min 6 characters) are required.',
+        error: 'A new password (min 6 characters) is required.',
+      });
+    }
+
+    let user = findUser(store, lookup);
+    const decodedReset = resetToken
+      ? verifyPayload<{ user: ServerUserRecord; tokenHash: string }>(resetToken)
+      : null;
+
+    if (!user && decodedReset?.user) {
+      user = decodedReset.user;
+    }
+
+    if (firebaseIdToken) {
+      const verifiedEmail = await verifyFirebaseIdTokenEmail(String(firebaseIdToken));
+      if (!verifiedEmail || (user && verifiedEmail !== user.email.trim().toLowerCase())) {
+        return sendJson(res, 400, { error: 'Verified email does not match this account.' });
+      }
+      if (!user) {
+        return sendJson(res, 404, { error: 'Account not found.' });
+      }
+      user.passwordHash = hashPassword(String(newPassword));
+      user.authProvider = 'email_verified';
+      user.emailVerified = true;
+      saveServerStore(store);
+      const token = signPayload({
+        userId: user.id,
+        uid: user.uid,
+        email: user.email,
+        userSnapshot: sanitizeServerUser(user),
+      });
+      return sendJson(res, 200, { ok: true, token, user: sanitizeServerUser(user) });
+    }
+
+    if (!cleanCode) {
+      return sendJson(res, 400, {
+        error: 'Please enter the 6-digit reset code sent to your email.',
       });
     }
 
     const expectedHash = hashResetCode(cleanCode);
-    let user = findUser(store, lookup);
 
-    if (resetToken) {
-      const decoded = verifyPayload<{ user: ServerUserRecord; tokenHash: string }>(resetToken);
-      if (decoded && decoded.tokenHash === expectedHash && decoded.user) {
-        const newHash = hashPassword(String(newPassword));
-        if (!user) {
-          user = {
-            ...decoded.user,
-            passwordHash: newHash,
-            authProvider: 'email_verified',
-            emailVerified: true,
-          };
-          store.users.push(user);
-        } else {
-          user.passwordHash = newHash;
-          user.authProvider = 'email_verified';
-          user.emailVerified = true;
-        }
-        saveServerStore(store);
-        const token = signPayload({
-          userId: user.id,
-          uid: user.uid,
-          email: user.email,
-          userSnapshot: sanitizeServerUser(user),
-        });
-        return sendJson(res, 200, { ok: true, token, user: sanitizeServerUser(user) });
+    if (decodedReset && decodedReset.tokenHash === expectedHash && decodedReset.user) {
+      const newHash = hashPassword(String(newPassword));
+      user = {
+        ...decodedReset.user,
+        passwordHash: newHash,
+        authProvider: 'email_verified',
+        emailVerified: true,
+      };
+      const existingIdx = store.users.findIndex((u) => u.email === user!.email);
+      if (existingIdx >= 0) {
+        store.users[existingIdx] = user;
+      } else {
+        store.users.push(user);
       }
+      saveServerStore(store);
+      const token = signPayload({
+        userId: user.id,
+        uid: user.uid,
+        email: user.email,
+        userSnapshot: sanitizeServerUser(user),
+      });
+      return sendJson(res, 200, { ok: true, token, user: sanitizeServerUser(user) });
     }
 
     if (!user) {

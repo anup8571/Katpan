@@ -206,8 +206,8 @@ async function handleClientFallback(path: string, init?: RequestInit): Promise<R
         playerId: record.playerId,
         displayName: record.displayName,
         email: record.email,
-        verificationCode: code,
-        message: 'Enter your 6-digit verification code to verify and sign in.',
+        emailSent: false,
+        message: 'Check your email inbox to verify your account and sign in.',
       },
       201
     );
@@ -216,11 +216,12 @@ async function handleClientFallback(path: string, init?: RequestInit): Promise<R
   if (path === '/api/auth/verify-email' && method === 'POST') {
     const lookup = String(body.identifier || body.email || '').trim();
     const code = String(body.code || '').trim();
+    const firebaseIdToken = String(body.firebaseIdToken || '').trim();
     const acc = findAcc(lookup);
     if (!acc) {
       return jsonRes({ error: 'Account not found. Please register first.' }, 404);
     }
-    if (acc.pendingCode && acc.pendingCode !== code) {
+    if (!firebaseIdToken && acc.pendingCode && acc.pendingCode !== code) {
       return jsonRes({ error: 'Invalid 6-digit verification code.' }, 400);
     }
     acc.emailVerified = true;
@@ -245,20 +246,55 @@ async function handleClientFallback(path: string, init?: RequestInit): Promise<R
       ok: true,
       playerId: acc.playerId,
       email: acc.email,
-      verificationCode: code,
+      emailSent: false,
     });
   }
 
   if (path === '/api/auth/login' && method === 'POST') {
     const lookup = String(body.identifier || body.email || '').trim();
     const password = String(body.password || '');
-    const acc = findAcc(lookup);
+    const firebaseIdToken = String(body.firebaseIdToken || '').trim();
+    const firestoreProfile = body.firestoreProfile;
+    let acc = findAcc(lookup);
+    if (!acc && firebaseIdToken && lookup.includes('@')) {
+      const cleanEmail = lookup.toLowerCase();
+      const restoredId = String(
+        firestoreProfile?.playerId ||
+          `${cleanEmail.split('@')[0].replace(/[^a-z0-9_]/gi, '').slice(0, 12) || 'player'}_${Math.floor(100 + Math.random() * 900)}`
+      ).toLowerCase();
+      acc = {
+        id: accounts.length + 1,
+        uid: restoredId,
+        playerId: restoredId,
+        email: cleanEmail,
+        displayName: String(firestoreProfile?.displayName || restoredId).slice(0, 64),
+        passwordHash: await hashPw(password),
+        authProvider: 'email_verified',
+        emailVerified: true,
+        preferredSeat: firestoreProfile?.preferredSeat || 'D',
+        coins: Number(firestoreProfile?.coins || 1000),
+        highestBalance: Number(firestoreProfile?.highestBalance || 1000),
+        totalWins: Number(firestoreProfile?.totalWins || 0),
+        totalRounds: Number(firestoreProfile?.totalRounds || 0),
+        hasPasswordHash: true,
+        createdAt: new Date().toISOString(),
+      };
+      accounts.push(acc);
+      saveAccounts(accounts);
+    }
     if (!acc) {
       return jsonRes({ error: 'No account found with that Email or Player ID.' }, 401);
     }
     const pwHash = await hashPw(password);
-    if (acc.passwordHash !== pwHash) {
+    if (!firebaseIdToken && acc.passwordHash !== pwHash) {
       return jsonRes({ error: 'Incorrect password. Please try again.' }, 401);
+    }
+    if (firebaseIdToken) {
+      acc.passwordHash = pwHash;
+      acc.emailVerified = true;
+      acc.authProvider = 'email_verified';
+      delete acc.pendingCode;
+      saveAccounts(accounts);
     }
     if (!acc.emailVerified) {
       const code = acc.pendingCode || String(Math.floor(100000 + Math.random() * 900000));
@@ -269,8 +305,8 @@ async function handleClientFallback(path: string, init?: RequestInit): Promise<R
           requiresVerification: true,
           playerId: acc.playerId,
           email: acc.email,
-          verificationCode: code,
-          error: 'Please verify your 6-digit code to sign in.',
+          emailSent: false,
+          error: 'Please verify your email address to sign in.',
         },
         403
       );
@@ -291,17 +327,18 @@ async function handleClientFallback(path: string, init?: RequestInit): Promise<R
       ok: true,
       playerId: acc.playerId,
       email: acc.email,
-      previewResetCode: code,
+      emailSent: false,
     });
   }
 
   if (path === '/api/auth/reset-password' && method === 'POST') {
     const lookup = String(body.identifier || body.email || '').trim();
     const code = String(body.code || '').trim();
+    const firebaseIdToken = String(body.firebaseIdToken || '').trim();
     const newPassword = String(body.newPassword || '');
     const acc = findAcc(lookup);
     if (!acc) return jsonRes({ error: 'Account not found.' }, 404);
-    if (acc.pendingCode && acc.pendingCode !== code) {
+    if (!firebaseIdToken && acc.pendingCode && acc.pendingCode !== code) {
       return jsonRes({ error: 'Invalid 6-digit reset code.' }, 400);
     }
     acc.passwordHash = await hashPw(newPassword);
