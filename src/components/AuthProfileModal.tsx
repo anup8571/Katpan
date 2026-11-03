@@ -11,21 +11,22 @@ import {
   Coins,
   Trophy,
   History,
-  Sparkles,
   Copy,
   Check,
+  AtSign,
+  RefreshCw,
 } from 'lucide-react';
 import { SeatId } from '../game/types';
-import { auth, googleAuthProvider } from '../lib/firebase';
-import { signInWithPopup } from 'firebase/auth';
-import { apiFetch, syncUserToLocalVault } from '../utils/apiClient';
+import { apiFetch } from '../utils/apiClient';
 
 export interface UserProfile {
   id: number;
   uid: string;
+  playerId?: string;
   email: string;
   displayName: string;
   authProvider: string;
+  emailVerified?: boolean;
   preferredSeat: SeatId;
   coins: number;
   highestBalance: number;
@@ -65,7 +66,7 @@ interface AuthProfileModalProps {
   onSelectSeat: (seat: SeatId) => void;
 }
 
-type AuthTab = 'login' | 'register' | 'forgot';
+type AuthTab = 'login' | 'register' | 'verify' | 'forgot';
 
 export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
   isOpen,
@@ -77,17 +78,26 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
   onSelectSeat,
 }) => {
   const [tab, setTab] = useState<AuthTab>('login');
+
+  // Shared / Login / Register fields
+  const [identifier, setIdentifier] = useState(''); // Player ID or Email for Login / Verify / Reset
+  const [playerId, setPlayerId] = useState(''); // Unique Player ID for Sign Up
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [preferredSeat, setPreferredSeat] = useState<SeatId>('D');
 
+  // Email Verification state
+  const [verifyCode, setVerifyCode] = useState('');
+  const [dispatchedVerifyCode, setDispatchedVerifyCode] = useState<string | null>(null);
+  const [copiedVerify, setCopiedVerify] = useState(false);
+
   // Forgot / Reset Password flow state
   const [resetStep, setResetStep] = useState<'request' | 'verify'>('request');
   const [resetCode, setResetCode] = useState('');
-  const [previewCode, setPreviewCode] = useState<string | null>(null);
+  const [previewResetCode, setPreviewResetCode] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
-  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedReset, setCopiedReset] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,30 +107,10 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
   const [securityStatus, setSecurityStatus] = useState<SecurityStatus | null>(null);
 
   useEffect(() => {
-    const onBridgeMessage = (event: MessageEvent) => {
-      if (
-        event.data &&
-        event.data.type === 'ROYALKATTI_GOOGLE_AUTH' &&
-        event.data.token &&
-        event.data.user
-      ) {
-        syncUserToLocalVault(event.data.user);
-        onAuthSuccess(event.data.token, event.data.user);
-        setError(null);
-        setSuccessMsg('Signed in with Google Cloud Auth Bridge!');
-        setLoading(false);
-      }
-    };
-    window.addEventListener('message', onBridgeMessage);
-    return () => window.removeEventListener('message', onBridgeMessage);
-  }, [onAuthSuccess]);
-
-  useEffect(() => {
     if (!isOpen) return;
     setError(null);
     setSuccessMsg(null);
 
-    // Fetch live PostgreSQL RLS & security status (with multi-origin + fallback)
     apiFetch('/api/security/status')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -128,7 +118,6 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
       })
       .catch(() => {});
 
-    // Fetch recent game sessions if logged in
     if (token) {
       apiFetch('/api/auth/me', {
         headers: { Authorization: `Bearer ${token}` },
@@ -143,32 +132,53 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  // 1. Sign In with Player ID or Email + Password
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMsg(null);
     setLoading(true);
     try {
+      const loginId = identifier.trim() || email.trim();
       const res = await apiFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          identifier: loginId,
+          email: loginId,
+          password,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Sign in failed.');
+        if (data.requiresVerification) {
+          setIdentifier(data.email || data.playerId || loginId);
+          setEmail(data.email || '');
+          if (data.verificationCode) {
+            setDispatchedVerifyCode(String(data.verificationCode));
+            setVerifyCode(String(data.verificationCode));
+          }
+          setTab('verify');
+          setError(null);
+          setSuccessMsg(
+            'Your account requires email verification. Enter the 6-digit verification code below.'
+          );
+        } else {
+          setError(data.error || 'Sign in failed.');
+        }
       } else {
         onAuthSuccess(data.token, data.user);
-        setSuccessMsg('Signed in! Your Royal Coins balance is synced.');
+        setSuccessMsg('Signed in! Your profile and Royal Coins balance are synced.');
       }
     } catch {
-      setError('Could not complete sign in. Please verify your email and password.');
+      setError('Server connection error while signing in. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleEmailRegister = async (e: React.FormEvent) => {
+  // 2. Sign Up with Player ID + Email + Password -> Generates 6-Digit Email Verification Code
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMsg(null);
@@ -178,36 +188,116 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
+          playerId: playerId.trim(),
+          displayName: displayName.trim() || playerId.trim(),
+          email: email.trim(),
           password,
-          displayName,
           preferredSeat,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || 'Registration failed.');
-      } else {
+      } else if (data.requiresVerification) {
+        setIdentifier(data.email || data.playerId || email.trim());
+        if (data.verificationCode) {
+          setDispatchedVerifyCode(String(data.verificationCode));
+          setVerifyCode(String(data.verificationCode));
+        }
+        setTab('verify');
+        setSuccessMsg(
+          data.message ||
+            'Account created! Verify the 6-digit email verification code below to activate your profile.'
+        );
+      } else if (data.token && data.user) {
         onAuthSuccess(data.token, data.user);
-        setSuccessMsg('Account created with hashed password & RLS protection!');
+        setSuccessMsg('Account created and verified!');
       }
     } catch {
-      setError('Could not complete registration. Please check your details.');
+      setError('Server connection error while registering. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  // 3. Verify Email with 6-Digit Code
+  const handleVerifyEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessMsg(null);
+    setLoading(true);
+    try {
+      const lookup = identifier.trim() || email.trim() || playerId.trim();
+      const res = await apiFetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: lookup,
+          email: lookup,
+          code: verifyCode.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Invalid or expired verification code.');
+      } else {
+        setDispatchedVerifyCode(null);
+        setVerifyCode('');
+        onAuthSuccess(data.token, data.user);
+        setSuccessMsg('Email verified! You are now signed in to your profile.');
+      }
+    } catch {
+      setError('Server connection error verifying email.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 4. Resend 6-Digit Email Verification Code
+  const handleResendVerification = async () => {
+    const lookup = identifier.trim() || email.trim() || playerId.trim();
+    if (!lookup) {
+      setError('Please enter your Player ID or Email Address first.');
+      return;
+    }
+    setError(null);
+    setSuccessMsg(null);
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: lookup, email: lookup }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Could not resend verification code.');
+      } else {
+        if (data.verificationCode) {
+          setDispatchedVerifyCode(String(data.verificationCode));
+          setVerifyCode(String(data.verificationCode));
+        }
+        setSuccessMsg('A fresh 6-digit email verification code has been dispatched.');
+      }
+    } catch {
+      setError('Server connection error requesting new verification code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 5. Request 6-Digit Password Reset Code
   const handleRequestResetCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMsg(null);
     setLoading(true);
     try {
+      const lookup = identifier.trim() || email.trim();
       const res = await apiFetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ identifier: lookup, email: lookup }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -215,32 +305,35 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
       } else {
         setResetStep('verify');
         if (data.previewResetCode) {
-          setPreviewCode(String(data.previewResetCode));
+          setPreviewResetCode(String(data.previewResetCode));
           setResetCode(String(data.previewResetCode));
         }
         setSuccessMsg(
-          '6-digit verification code generated and hashed! Enter your new password below.'
+          '6-digit password reset code generated! Enter the code and your new password below.'
         );
       }
     } catch {
-      setError('Could not generate password reset code.');
+      setError('Server connection error requesting password reset.');
     } finally {
       setLoading(false);
     }
   };
 
+  // 6. Confirm Password Reset
   const handleConfirmResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMsg(null);
     setLoading(true);
     try {
+      const lookup = identifier.trim() || email.trim();
       const res = await apiFetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
-          code: resetCode,
+          identifier: lookup,
+          email: lookup,
+          code: resetCode.trim(),
           newPassword,
         }),
       });
@@ -248,123 +341,13 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
       if (!res.ok) {
         setError(data.error || 'Failed to reset password.');
       } else {
-        setPreviewCode(null);
+        setPreviewResetCode(null);
         setResetStep('request');
         onAuthSuccess(data.token, data.user);
         setSuccessMsg('Password reset complete! You are now signed in.');
       }
     } catch {
-      setError('Could not reset password.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const completeInstantGoogleCloudFallback = async () => {
-    const fallbackEmail =
-      email.trim().includes('@')
-        ? email.trim().toLowerCase()
-        : 'vip.google@royalkatti.com';
-    const fallbackName =
-      displayName.trim() ||
-      (fallbackEmail !== 'vip.google@royalkatti.com'
-        ? fallbackEmail.split('@')[0]
-        : 'Google VIP Player');
-
-    const res = await apiFetch('/api/auth/google', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        uid: `google_${fallbackEmail.replace(/[^a-z0-9]/g, '_')}`,
-        email: fallbackEmail,
-        displayName: fallbackName,
-        preferredSeat,
-      }),
-    });
-    const data = await res.json();
-    if (res.ok && data.token && data.user) {
-      onAuthSuccess(data.token, data.user);
-      setError(null);
-      setSuccessMsg('Signed in with Google Cloud Auth (Cross-Domain Verified)!');
-    } else {
-      setError(data.error || 'Google authentication failed.');
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setError(null);
-    setSuccessMsg(null);
-    setLoading(true);
-
-    // Check if current hostname is pre-authorized by Firebase Auth
-    const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
-    const isFirebaseWhitelistedHost =
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname.endsWith('.run.app') ||
-      hostname.endsWith('.firebaseapp.com') ||
-      hostname.endsWith('.web.app');
-
-    if (!isFirebaseWhitelistedHost) {
-      // On external domains like kat-pan.vercel.app, bypass Firebase's unauthorized-domain popup error
-      // and authenticate directly via the Cross-Domain Cloud Run API / Instant Google Cloud session
-      try {
-        await completeInstantGoogleCloudFallback();
-      } catch {
-        setError('Could not complete Google Cloud sign-in.');
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-
-    try {
-      const cred = await signInWithPopup(auth, googleAuthProvider);
-      const idToken = await cred.user.getIdToken();
-      const res = await apiFetch('/api/auth/google', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          uid: cred.user.uid,
-          email: cred.user.email,
-          displayName: cred.user.displayName,
-          preferredSeat,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        await completeInstantGoogleCloudFallback();
-      } else {
-        onAuthSuccess(data.token, data.user);
-        setSuccessMsg('Signed in with Google Account!');
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '';
-      // If domain isn't whitelisted or popup was blocked by mobile browser shields, seamlessly fall back
-      if (
-        msg.includes('unauthorized-domain') ||
-        msg.includes('popup-blocked') ||
-        msg.includes('operation-not-supported') ||
-        msg.includes('internal-error') ||
-        msg.includes('cancelled-popup-request')
-      ) {
-        try {
-          await completeInstantGoogleCloudFallback();
-        } catch {
-          setError('Could not complete Google sign-in.');
-        }
-      } else if (msg.includes('popup-closed-by-user')) {
-        setError('Google sign-in popup was closed before completing.');
-      } else {
-        try {
-          await completeInstantGoogleCloudFallback();
-        } catch {
-          setError(msg || 'Google sign-in cancelled.');
-        }
-      }
+      setError('Server connection error resetting password.');
     } finally {
       setLoading(false);
     }
@@ -378,7 +361,7 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
       aria-label="Player Profile and Authentication"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-md select-none animate-fadeIn"
     >
-      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-950/75 backdrop-blur-xl border border-white/15 p-4 sm:p-5 shadow-[0_20px_60px_rgba(0,0,0,0.85)] text-slate-100 flex flex-col gap-4">
+      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-950/80 backdrop-blur-xl border border-white/15 p-4 sm:p-5 shadow-[0_20px_60px_rgba(0,0,0,0.85)] text-slate-100 flex flex-col gap-4">
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div className="flex items-center gap-2.5">
@@ -387,12 +370,12 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-black tracking-wide text-white">
-                {user ? 'VIP PLAYER PROFILE' : 'ROYAL KATTI ACCOUNT'}
+                {user ? 'PLAYER ID PROFILE' : 'ROYAL KATTI ID & PASSWORD AUTH'}
               </h2>
               <p className="text-[11px] text-slate-400">
                 {user
-                  ? 'Cloud SQL Synced • RLS & Scrypt Protected'
-                  : 'Email Registration, Login & Password Recovery'}
+                  ? `ID: @${user.playerId || user.uid} • Cloud SQL & Scrypt Verified`
+                  : 'Sign Up, Email Verification, ID Login & Password Reset'}
               </p>
             </div>
           </div>
@@ -433,10 +416,13 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
                       {user.displayName}
                     </span>
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 uppercase">
-                      {user.authProvider}
+                      Verified ID
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                  <p className="text-xs text-amber-300/90 font-mono truncate">
+                    ID: @{user.playerId || user.uid}
+                  </p>
+                  <p className="text-[11px] text-slate-400 truncate">{user.email}</p>
                 </div>
               </div>
 
@@ -455,7 +441,7 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">
                   Balance
                 </span>
-                <span className="text-sm font-black text-emerald-400 flex items-center justify-center gap-1 mt-0.5">
+                <span className="text-sm font-black text-emerald-400 flex items-center justify-center gap-1 mt-0.5 tabular-nums">
                   <Coins className="w-3.5 h-3.5" />
                   {user.coins.toLocaleString()} RC
                 </span>
@@ -464,7 +450,7 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">
                   Peak RC
                 </span>
-                <span className="text-sm font-black text-amber-300 flex items-center justify-center gap-1 mt-0.5">
+                <span className="text-sm font-black text-amber-300 flex items-center justify-center gap-1 mt-0.5 tabular-nums">
                   <Trophy className="w-3.5 h-3.5" />
                   {user.highestBalance.toLocaleString()} RC
                 </span>
@@ -473,7 +459,7 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">
                   Wins / Hands
                 </span>
-                <span className="text-sm font-black text-sky-300 block mt-0.5">
+                <span className="text-sm font-black text-sky-300 block mt-0.5 tabular-nums">
                   {user.totalWins} / {user.totalRounds}
                 </span>
               </div>
@@ -506,7 +492,7 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
               <div className="rounded-xl bg-white/5 border border-white/10 p-3 flex flex-col gap-2">
                 <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 uppercase tracking-wider">
                   <History className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Recent Cloud SQL Hands</span>
+                  <span>Recent Recorded Hands</span>
                 </div>
                 <div className="flex flex-col gap-1.5 max-h-32 overflow-y-auto pr-1">
                   {sessions.slice(0, 5).map((s) => (
@@ -534,8 +520,8 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
         ) : (
           /* SIGNED-OUT AUTHENTICATION TABS */
           <div className="flex flex-col gap-3.5">
-            {/* Mode Switcher */}
-            <div className="grid grid-cols-3 gap-1.5 bg-slate-900/80 p-1 rounded-xl border border-white/10">
+            {/* 4-Tab Mode Switcher: Sign In | Sign Up | Verify Email | Reset Pass */}
+            <div className="grid grid-cols-4 gap-1 bg-slate-900/80 p-1 rounded-xl border border-white/10">
               <button
                 type="button"
                 onClick={() => {
@@ -543,13 +529,13 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
                   setError(null);
                   setSuccessMsg(null);
                 }}
-                className={`py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                className={`py-2 rounded-lg text-[11px] font-black transition-all cursor-pointer whitespace-nowrap ${
                   tab === 'login'
                     ? 'bg-amber-400 text-slate-950 shadow'
                     : 'text-slate-300 hover:text-white'
                 }`}
               >
-                Email Login
+                Sign In
               </button>
               <button
                 type="button"
@@ -558,13 +544,28 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
                   setError(null);
                   setSuccessMsg(null);
                 }}
-                className={`py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                className={`py-2 rounded-lg text-[11px] font-black transition-all cursor-pointer whitespace-nowrap ${
                   tab === 'register'
                     ? 'bg-amber-400 text-slate-950 shadow'
                     : 'text-slate-300 hover:text-white'
                 }`}
               >
-                Register
+                Sign Up
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTab('verify');
+                  setError(null);
+                  setSuccessMsg(null);
+                }}
+                className={`py-2 rounded-lg text-[11px] font-black transition-all cursor-pointer whitespace-nowrap ${
+                  tab === 'verify'
+                    ? 'bg-amber-400 text-slate-950 shadow'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Verify Email
               </button>
               <button
                 type="button"
@@ -573,7 +574,7 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
                   setError(null);
                   setSuccessMsg(null);
                 }}
-                className={`py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                className={`py-2 rounded-lg text-[11px] font-black transition-all cursor-pointer whitespace-nowrap ${
                   tab === 'forgot'
                     ? 'bg-amber-400 text-slate-950 shadow'
                     : 'text-slate-300 hover:text-white'
@@ -583,19 +584,21 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
               </button>
             </div>
 
-            {/* TAB 1: EMAIL LOGIN */}
+            {/* TAB 1: SIGN IN (PLAYER ID OR EMAIL + PASSWORD) */}
             {tab === 'login' && (
-              <form onSubmit={handleEmailLogin} className="flex flex-col gap-3">
+              <form onSubmit={handleLogin} className="flex flex-col gap-3">
                 <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-bold text-slate-300">Email Address</span>
+                  <span className="text-[11px] font-bold text-slate-300">
+                    Player ID or Email Address
+                  </span>
                   <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <AtSign className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
-                      type="email"
+                      type="text"
                       required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="player@royalkatti.com"
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      placeholder="vikram99 or player@royalkatti.com"
                       className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-900/90 border border-white/15 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400"
                     />
                   </div>
@@ -631,28 +634,54 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
                   disabled={loading}
                   className="w-full py-2.5 px-4 rounded-xl font-black text-xs sm:text-sm text-slate-950 bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 hover:brightness-110 border border-yellow-200 shadow-lg cursor-pointer transition-all disabled:opacity-50"
                 >
-                  {loading ? 'VERIFYING SCRYPT HASH...' : 'SIGN IN WITH EMAIL'}
+                  {loading ? 'VERIFYING ID & PASSWORD...' : 'SIGN IN WITH ID / EMAIL'}
                 </button>
               </form>
             )}
 
-            {/* TAB 2: EMAIL REGISTRATION */}
+            {/* TAB 2: SIGN UP (PLAYER ID + DISPLAY NAME + EMAIL + PASSWORD) */}
             {tab === 'register' && (
-              <form onSubmit={handleEmailRegister} className="flex flex-col gap-3">
-                <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-bold text-slate-300">Player Name</span>
-                  <div className="relative">
-                    <UserIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      required
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Maharaja Vikram"
-                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900/90 border border-white/15 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400"
-                    />
-                  </div>
-                </label>
+              <form onSubmit={handleRegister} className="flex flex-col gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-bold text-slate-300">
+                      Unique Player ID
+                    </span>
+                    <div className="relative">
+                      <AtSign className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        required
+                        minLength={3}
+                        value={playerId}
+                        onChange={(e) =>
+                          setPlayerId(
+                            e.target.value.toLowerCase().replace(/[^a-z0-9_.-]/g, '')
+                          )
+                        }
+                        placeholder="vikram99"
+                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900/90 border border-white/15 text-xs sm:text-sm font-mono text-white focus:outline-none focus:border-amber-400"
+                      />
+                    </div>
+                  </label>
+
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-bold text-slate-300">
+                      Display Name
+                    </span>
+                    <div className="relative">
+                      <UserIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        required
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        placeholder="Maharaja Vikram"
+                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900/90 border border-white/15 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400"
+                      />
+                    </div>
+                  </label>
+                </div>
 
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] font-bold text-slate-300">Email Address</span>
@@ -714,32 +743,130 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
                   disabled={loading}
                   className="w-full py-2.5 px-4 rounded-xl font-black text-xs sm:text-sm text-slate-950 bg-gradient-to-r from-emerald-300 via-emerald-400 to-teal-400 hover:brightness-110 border border-emerald-200 shadow-lg cursor-pointer transition-all disabled:opacity-50"
                 >
-                  {loading ? 'CREATING ACCOUNT...' : 'CREATE ACCOUNT (1,000 RC)'}
+                  {loading ? 'CREATING ACCOUNT...' : 'SIGN UP & SEND VERIFICATION CODE'}
                 </button>
               </form>
             )}
 
-            {/* TAB 3: FORGOT PASSWORD / PASSWORD RESET */}
+            {/* TAB 3: EMAIL VERIFICATION (6-DIGIT VERIFICATION CODE) */}
+            {tab === 'verify' && (
+              <form onSubmit={handleVerifyEmail} className="flex flex-col gap-3">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Verify your email address with the 6-digit verification code generated for
+                  your Player ID / Email to activate your account across all browsers.
+                </p>
+
+                {dispatchedVerifyCode && (
+                  <div className="rounded-xl bg-amber-500/15 border border-amber-400/50 p-2.5 flex items-center justify-between gap-2">
+                    <div className="text-xs">
+                      <span className="text-amber-200 font-bold block">
+                        6-Digit Email Verification Code:
+                      </span>
+                      <span className="font-mono text-base font-black text-amber-300 tracking-widest">
+                        {dispatchedVerifyCode}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(dispatchedVerifyCode);
+                        setCopiedVerify(true);
+                        setTimeout(() => setCopiedVerify(false), 1500);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 border border-amber-300/40 text-amber-200 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedVerify ? (
+                        <Check className="w-3.5 h-3.5" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span>{copiedVerify ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                )}
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-bold text-slate-300">
+                    Player ID or Email Address
+                  </span>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      value={identifier || email}
+                      onChange={(e) => {
+                        setIdentifier(e.target.value);
+                        setEmail(e.target.value);
+                      }}
+                      placeholder="vikram99 or player@royalkatti.com"
+                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900/90 border border-white/15 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-bold text-slate-300">
+                    6-Digit Verification Code
+                  </span>
+                  <div className="relative">
+                    <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      value={verifyCode}
+                      onChange={(e) => setVerifyCode(e.target.value)}
+                      placeholder="123456"
+                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900/90 border border-white/15 text-xs sm:text-sm font-mono tracking-widest text-white focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                </label>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={handleResendVerification}
+                    className="py-2.5 px-3 rounded-xl font-bold text-xs text-slate-200 bg-white/5 hover:bg-white/10 border border-white/15 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Resend Code</span>
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="flex-1 py-2.5 px-4 rounded-xl font-black text-xs sm:text-sm text-slate-950 bg-gradient-to-r from-emerald-300 to-teal-400 hover:brightness-110 border border-emerald-200 shadow-lg cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    {loading ? 'VERIFYING...' : 'VERIFY EMAIL & SIGN IN'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* TAB 4: FORGOT PASSWORD / PASSWORD RESET */}
             {tab === 'forgot' && (
               <div className="flex flex-col gap-3">
                 {resetStep === 'request' ? (
                   <form onSubmit={handleRequestResetCode} className="flex flex-col gap-3">
                     <p className="text-xs text-slate-300 leading-relaxed">
-                      Enter your registered email address to generate a time-limited 6-digit
-                      password reset code protected by HMAC-SHA256 in PostgreSQL.
+                      Enter your Player ID or registered Email Address to generate a
+                      time-limited 6-digit password reset code protected by HMAC-SHA256.
                     </p>
                     <label className="flex flex-col gap-1">
                       <span className="text-[11px] font-bold text-slate-300">
-                        Account Email Address
+                        Player ID or Email Address
                       </span>
                       <div className="relative">
                         <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
-                          type="email"
+                          type="text"
                           required
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="player@royalkatti.com"
+                          value={identifier || email}
+                          onChange={(e) => {
+                            setIdentifier(e.target.value);
+                            setEmail(e.target.value);
+                          }}
+                          placeholder="vikram99 or player@royalkatti.com"
                           className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-900/90 border border-white/15 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400"
                         />
                       </div>
@@ -754,31 +881,31 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
                   </form>
                 ) : (
                   <form onSubmit={handleConfirmResetPassword} className="flex flex-col gap-3">
-                    {previewCode && (
+                    {previewResetCode && (
                       <div className="rounded-xl bg-amber-500/15 border border-amber-400/50 p-2.5 flex items-center justify-between gap-2">
                         <div className="text-xs">
                           <span className="text-amber-200 font-bold block">
-                            Instant Verification Code:
+                            6-Digit Password Reset Code:
                           </span>
                           <span className="font-mono text-base font-black text-amber-300 tracking-widest">
-                            {previewCode}
+                            {previewResetCode}
                           </span>
                         </div>
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard?.writeText(previewCode);
-                            setCopiedCode(true);
-                            setTimeout(() => setCopiedCode(false), 1500);
+                            navigator.clipboard?.writeText(previewResetCode);
+                            setCopiedReset(true);
+                            setTimeout(() => setCopiedReset(false), 1500);
                           }}
                           className="px-2.5 py-1.5 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 border border-amber-300/40 text-amber-200 text-xs font-bold flex items-center gap-1 cursor-pointer"
                         >
-                          {copiedCode ? (
+                          {copiedReset ? (
                             <Check className="w-3.5 h-3.5" />
                           ) : (
                             <Copy className="w-3.5 h-3.5" />
                           )}
-                          <span>{copiedCode ? 'Copied' : 'Copy'}</span>
+                          <span>{copiedReset ? 'Copied' : 'Copy'}</span>
                         </button>
                       </div>
                     )}
@@ -838,25 +965,6 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
                 )}
               </div>
             )}
-
-            {/* Google Sign-In Alternative */}
-            <div className="relative flex py-1 items-center">
-              <div className="flex-grow border-t border-white/10" />
-              <span className="flex-shrink mx-3 text-[10px] font-bold text-slate-400 uppercase">
-                Or Instant Cloud Auth
-              </span>
-              <div className="flex-grow border-t border-white/10" />
-            </div>
-
-            <button
-              type="button"
-              onClick={handleGoogleSignIn}
-              disabled={loading}
-              className="w-full py-2.5 px-4 rounded-xl font-bold text-xs text-white bg-white/10 hover:bg-white/15 border border-white/15 flex items-center justify-center gap-2 cursor-pointer transition-all"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Continue with Google Account</span>
-            </button>
           </div>
         )}
 
@@ -865,17 +973,16 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-[11px] font-black text-emerald-300 uppercase tracking-wider">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>PostgreSQL RLS &amp; Scrypt Security Active</span>
+              <span>Server ID/Password Auth • RLS &amp; Scrypt Active</span>
             </span>
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
               {securityStatus?.policies?.length || 4} RLS Policies ON
             </span>
           </div>
           <p className="text-[10px] text-slate-300 leading-relaxed">
-            • Passwords hashed with <b>scrypt + 128-bit random salt</b> &amp; verified via{' '}
-            <code>timingSafeEqual</code>.<br />• Row-Level Security enabled on{' '}
-            <code>users</code>, <code>password_reset_tokens</code>,{' '}
-            <code>multiplayer_rooms</code> &amp; <code>game_sessions</code>.
+            • Profiles are stored on the server by <b>Player ID &amp; Email</b> with{' '}
+            <b>scrypt + 128-bit salt</b> password hashing.<br />• 6-digit Email Verification
+            &amp; Password Reset tokens hashed with <code>HMAC-SHA256</code>.
           </p>
         </div>
       </div>

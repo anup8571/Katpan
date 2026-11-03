@@ -68,9 +68,11 @@ function sanitizeUser(u: typeof users.$inferSelect) {
   return {
     id: u.id,
     uid: u.uid,
+    playerId: u.uid,
     email: u.email,
-    displayName: u.displayName || u.email.split('@')[0],
+    displayName: u.displayName || u.uid || u.email.split('@')[0],
     authProvider: u.authProvider,
+    emailVerified: u.authProvider !== 'email_unverified',
     preferredSeat: (u.preferredSeat as SeatId) || 'D',
     coins: u.coins,
     highestBalance: u.highestBalance,
@@ -79,6 +81,19 @@ function sanitizeUser(u: typeof users.$inferSelect) {
     hasPasswordHash: Boolean(u.passwordHash && u.passwordHash.startsWith('scrypt$')),
     createdAt: u.createdAt,
   };
+}
+
+async function findUserByIdentifier(identifier: string) {
+  const clean = String(identifier || '').trim().toLowerCase();
+  if (!clean) return null;
+  const rows = await db
+    .select()
+    .from(users)
+    .where(
+      sql`LOWER(${users.email}) = ${clean} OR LOWER(${users.uid}) = ${clean} OR LOWER(${users.displayName}) = ${clean}`
+    )
+    .limit(1);
+  return rows[0] || null;
 }
 
 function seedDefaultMemoryRooms() {
@@ -219,146 +234,6 @@ async function startServer() {
   }, 1500);
 
   // =========================================================================
-  // 0. CROSS-DOMAIN GOOGLE OAUTH BRIDGE FOR EXTERNAL DOMAINS (e.g. VERCEL)
-  // =========================================================================
-  app.get('/auth/google-bridge', (_req, res) => {
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    return res.send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Royal Katti 3D • Google Cloud Auth Bridge</title>
-  <style>
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #07090e;
-      color: #f8fafc;
-      font-family: system-ui, -apple-system, sans-serif;
-      padding: 20px;
-      box-sizing: border-box;
-    }
-    .card {
-      max-width: 380px;
-      width: 100%;
-      background: rgba(15, 23, 42, 0.9);
-      border: 1px solid rgba(245, 158, 11, 0.35);
-      border-radius: 16px;
-      padding: 24px;
-      text-align: center;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
-    }
-    h1 {
-      font-size: 16px;
-      margin: 0 0 8px;
-      color: #fbbf24;
-      letter-spacing: 0.04em;
-    }
-    p {
-      font-size: 13px;
-      color: #94a3b8;
-      margin: 0 0 18px;
-      line-height: 1.5;
-    }
-    button {
-      width: 100%;
-      padding: 12px 16px;
-      border-radius: 12px;
-      border: none;
-      font-weight: 700;
-      font-size: 13px;
-      cursor: pointer;
-      background: linear-gradient(90deg, #f59e0b, #eab308);
-      color: #090d16;
-      margin-bottom: 10px;
-    }
-    .secondary {
-      background: rgba(255, 255, 255, 0.08);
-      color: #e2e8f0;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>ROYAL KATTI GOOGLE AUTH</h1>
-    <p id="status">Connecting to Google Cloud Auth on whitelisted server...</p>
-    <button id="googleBtn">Sign In with Google Popup</button>
-    <button id="instantBtn" class="secondary">Continue with Instant Cloud VIP Pass</button>
-  </div>
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
-    import { getAuth, GoogleAuthProvider, signInWithPopup } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
-
-    const firebaseConfig = {
-      projectId: "reference-feat-r07pf",
-      appId: "1:34559462066:web:dfc2abf805e4edfc0117ab",
-      apiKey: "AIzaSyCP9aCqJt8vJAcF0Oss00iJswZb8x0FPcI",
-      authDomain: "reference-feat-r07pf.firebaseapp.com"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const provider = new GoogleAuthProvider();
-    const statusEl = document.getElementById('status');
-
-    async function finishWithBackend(headers, bodyObj) {
-      const res = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(bodyObj || {})
-      });
-      const data = await res.json();
-      if (res.ok && data.token && window.opener) {
-        window.opener.postMessage({
-          type: 'ROYALKATTI_GOOGLE_AUTH',
-          token: data.token,
-          user: data.user
-        }, '*');
-        window.close();
-      } else {
-        statusEl.textContent = data.error || 'Could not complete sign-in.';
-      }
-    }
-
-    async function startGooglePopup() {
-      try {
-        statusEl.textContent = 'Opening Google Sign-In...';
-        const cred = await signInWithPopup(auth, provider);
-        const idToken = await cred.user.getIdToken();
-        await finishWithBackend(
-          { Authorization: 'Bearer ' + idToken },
-          {
-            uid: cred.user.uid,
-            email: cred.user.email,
-            displayName: cred.user.displayName
-          }
-        );
-      } catch (err) {
-        statusEl.textContent = 'Popup blocked or domain restricted. Click below for Instant VIP Cloud Sign-In.';
-      }
-    }
-
-    document.getElementById('googleBtn').addEventListener('click', startGooglePopup);
-    document.getElementById('instantBtn').addEventListener('click', () => {
-      finishWithBackend({}, {
-        uid: 'google_vip_' + Date.now(),
-        email: 'vip.google@royalkatti.com',
-        displayName: 'Google VIP Player'
-      });
-    });
-
-    startGooglePopup();
-  </script>
-</body>
-</html>`);
-  });
-
-  // =========================================================================
   // 1. SECURITY & RLS VERIFICATION ENDPOINT
   // =========================================================================
   app.get('/api/security/status', async (_req, res) => {
@@ -373,7 +248,7 @@ async function startServer() {
       return res.json({
         rlsEnabled: true,
         passwordHashing: 'scrypt (N=16384, r=8, p=1, 64-byte key + 128-bit random salt + timingSafeEqual)',
-        resetTokenHashing: 'HMAC-SHA256 with 15-minute TTL',
+        resetTokenHashing: 'HMAC-SHA256 with 15-minute TTL (Email Verification & Password Reset)',
         tables: tablesRes.rows.map((r) => ({ tablename: r.tablename, rowsecurity: true })),
         policies: [
           { tablename: 'users', policyname: 'users_self_access_policy', cmd: 'ALL' },
@@ -389,14 +264,24 @@ async function startServer() {
   });
 
   // =========================================================================
-  // 2. EMAIL REGISTRATION, LOGIN, FORGOT PASSWORD & RESET ENDPOINTS
+  // 2. PLAYER ID / EMAIL SIGN UP, EMAIL VERIFICATION, LOGIN & PASSWORD RESET
   // =========================================================================
   app.post('/api/auth/register', async (req, res) => {
     try {
-      const { email, password, displayName, preferredSeat } = req.body || {};
+      const { playerId, email, password, displayName, preferredSeat } = req.body || {};
       const cleanEmail = String(email || '').trim().toLowerCase();
-      const cleanName = String(displayName || '').trim() || cleanEmail.split('@')[0];
+      const rawPlayerId = String(playerId || displayName || cleanEmail.split('@')[0] || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_.-]/g, '');
+      const cleanPlayerId = rawPlayerId || `player_${crypto.randomInt(1000, 9999)}`;
+      const cleanName = String(displayName || cleanPlayerId).trim();
 
+      if (cleanPlayerId.length < 3) {
+        return res.status(400).json({
+          error: 'Player ID must be at least 3 characters (letters, numbers, or underscores).',
+        });
+      }
       if (!cleanEmail || !cleanEmail.includes('@')) {
         return res.status(400).json({ error: 'Please enter a valid email address.' });
       }
@@ -406,46 +291,86 @@ async function startServer() {
           .json({ error: 'Password must be at least 6 characters long.' });
       }
 
-      const existing = await db
+      const existingByEmail = await db
         .select()
         .from(users)
-        .where(eq(users.email, cleanEmail))
+        .where(sql`LOWER(${users.email}) = ${cleanEmail}`)
         .limit(1);
 
-      if (existing.length > 0) {
-        return res
-          .status(409)
-          .json({ error: 'An account with this email already exists. Please sign in.' });
-      }
+      const existingById = await db
+        .select()
+        .from(users)
+        .where(sql`LOWER(${users.uid}) = ${cleanPlayerId}`)
+        .limit(1);
 
       const passwordHash = hashPassword(String(password));
-      const uid = `email_${crypto.randomUUID()}`;
       const validSeats: SeatId[] = ['A', 'B', 'C', 'D', 'E', 'F'];
       const seat: SeatId = validSeats.includes(preferredSeat) ? preferredSeat : 'D';
 
-      const [created] = await db
-        .insert(users)
-        .values({
-          uid,
-          email: cleanEmail,
-          displayName: cleanName,
-          passwordHash,
-          authProvider: 'email',
-          preferredSeat: seat,
-          coins: 1000,
-          highestBalance: 1000,
-        })
-        .returning();
+      let targetUser: typeof users.$inferSelect;
 
-      const token = signSessionToken({
-        userId: created.id,
-        uid: created.uid,
-        email: created.email,
+      if (existingByEmail.length > 0) {
+        const existing = existingByEmail[0];
+        // If existing account was unverified or had no password hash yet, update it and send verification code
+        if (!existing.passwordHash || existing.authProvider === 'email_unverified') {
+          const [updated] = await db
+            .update(users)
+            .set({
+              uid:
+                existingById.length === 0 || existingById[0].id === existing.id
+                  ? cleanPlayerId
+                  : existing.uid,
+              displayName: cleanName,
+              passwordHash,
+              authProvider: 'email_unverified',
+              preferredSeat: seat,
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, existing.id))
+            .returning();
+          targetUser = updated;
+        } else {
+          return res.status(409).json({
+            error: 'An account with this email already exists. Please sign in or reset your password.',
+          });
+        }
+      } else if (existingById.length > 0) {
+        return res.status(409).json({
+          error: `Player ID "${cleanPlayerId}" is already taken. Please choose another Player ID.`,
+        });
+      } else {
+        const [created] = await db
+          .insert(users)
+          .values({
+            uid: cleanPlayerId,
+            email: cleanEmail,
+            displayName: cleanName,
+            passwordHash,
+            authProvider: 'email_unverified',
+            preferredSeat: seat,
+            coins: 1000,
+            highestBalance: 1000,
+          })
+          .returning();
+        targetUser = created;
+      }
+
+      const { code, tokenHash, expiresAt } = generateResetCode();
+      await db.insert(passwordResetTokens).values({
+        userId: targetUser.id,
+        email: targetUser.email,
+        tokenHash,
+        expiresAt,
       });
 
       return res.status(201).json({
-        token,
-        user: sanitizeUser(created),
+        requiresVerification: true,
+        playerId: targetUser.uid,
+        email: targetUser.email,
+        verificationCode: code,
+        expiresAt: expiresAt.toISOString(),
+        message:
+          'Account created! Enter the 6-digit email verification code below to verify and activate your profile.',
       });
     } catch (error) {
       console.error('Registration error:', error);
@@ -453,28 +378,161 @@ async function startServer() {
     }
   });
 
-  app.post('/api/auth/login', async (req, res) => {
+  app.post('/api/auth/verify-email', async (req, res) => {
     try {
-      const { email, password } = req.body || {};
-      const cleanEmail = String(email || '').trim().toLowerCase();
+      const { identifier, email, code } = req.body || {};
+      const lookup = String(identifier || email || '').trim();
+      const cleanCode = String(code || '').trim();
 
-      if (!cleanEmail || !password) {
-        return res.status(400).json({ error: 'Email and password are required.' });
+      if (!lookup || !cleanCode) {
+        return res.status(400).json({
+          error: 'Player ID / Email and 6-digit verification code are required.',
+        });
       }
 
-      const [user] = await db
+      const user = await findUserByIdentifier(lookup);
+      if (!user) {
+        return res.status(404).json({
+          error: 'Account not found. Please check your Player ID or Email.',
+        });
+      }
+
+      const expectedHash = hashResetCode(cleanCode);
+      const now = new Date();
+
+      const matchingTokens = await db
         .select()
-        .from(users)
-        .where(eq(users.email, cleanEmail))
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.userId, user.id),
+            eq(passwordResetTokens.tokenHash, expectedHash),
+            isNull(passwordResetTokens.usedAt),
+            gt(passwordResetTokens.expiresAt, now)
+          )
+        )
+        .orderBy(desc(passwordResetTokens.createdAt))
         .limit(1);
 
-      if (!user || !user.passwordHash) {
-        return res.status(401).json({ error: 'Invalid email or password.' });
+      if (matchingTokens.length === 0) {
+        return res.status(400).json({
+          error: 'Invalid or expired 6-digit verification code. Click Resend Code to get a new one.',
+        });
+      }
+
+      const tokenRecord = matchingTokens[0];
+      const [verifiedUser] = await db
+        .update(users)
+        .set({
+          authProvider: 'email_verified',
+          updatedAt: now,
+        })
+        .where(eq(users.id, user.id))
+        .returning();
+
+      await db
+        .update(passwordResetTokens)
+        .set({ usedAt: now })
+        .where(eq(passwordResetTokens.id, tokenRecord.id));
+
+      const sessionToken = signSessionToken({
+        userId: verifiedUser.id,
+        uid: verifiedUser.uid,
+        email: verifiedUser.email,
+      });
+
+      return res.json({
+        ok: true,
+        message: 'Email verified! Your profile is now active.',
+        token: sessionToken,
+        user: sanitizeUser(verifiedUser),
+      });
+    } catch (error) {
+      console.error('Verify email error:', error);
+      return res.status(500).json({ error: 'Email verification failed.' });
+    }
+  });
+
+  app.post('/api/auth/resend-verification', async (req, res) => {
+    try {
+      const { identifier, email } = req.body || {};
+      const lookup = String(identifier || email || '').trim();
+      if (!lookup) {
+        return res.status(400).json({ error: 'Please enter your Player ID or Email.' });
+      }
+
+      const user = await findUserByIdentifier(lookup);
+      if (!user) {
+        return res.status(404).json({ error: 'No account found for that Player ID or Email.' });
+      }
+
+      const { code, tokenHash, expiresAt } = generateResetCode();
+      await db.insert(passwordResetTokens).values({
+        userId: user.id,
+        email: user.email,
+        tokenHash,
+        expiresAt,
+      });
+
+      return res.json({
+        ok: true,
+        playerId: user.uid,
+        email: user.email,
+        verificationCode: code,
+        expiresAt: expiresAt.toISOString(),
+        message: 'A fresh 6-digit email verification code has been generated.',
+      });
+    } catch (error) {
+      console.error('Resend verification error:', error);
+      return res.status(500).json({ error: 'Could not resend verification code.' });
+    }
+  });
+
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { identifier, email, password } = req.body || {};
+      const lookup = String(identifier || email || '').trim();
+
+      if (!lookup || !password) {
+        return res.status(400).json({
+          error: 'Player ID (or Email) and password are required.',
+        });
+      }
+
+      const user = await findUserByIdentifier(lookup);
+      if (!user) {
+        return res.status(401).json({
+          error: 'No account found with that Player ID or Email. Please Sign Up first.',
+        });
+      }
+
+      if (!user.passwordHash) {
+        return res.status(401).json({
+          error:
+            'This account does not have a password set yet. Use "Reset Pass" to set your password.',
+        });
       }
 
       const isValid = verifyPassword(String(password), user.passwordHash);
       if (!isValid) {
-        return res.status(401).json({ error: 'Invalid email or password.' });
+        return res.status(401).json({ error: 'Invalid Player ID/Email or password.' });
+      }
+
+      if (user.authProvider === 'email_unverified') {
+        const { code, tokenHash, expiresAt } = generateResetCode();
+        await db.insert(passwordResetTokens).values({
+          userId: user.id,
+          email: user.email,
+          tokenHash,
+          expiresAt,
+        });
+        return res.status(403).json({
+          requiresVerification: true,
+          playerId: user.uid,
+          email: user.email,
+          verificationCode: code,
+          error: 'Please verify your email with the 6-digit code to complete sign in.',
+        });
       }
 
       const token = signSessionToken({
@@ -495,36 +553,35 @@ async function startServer() {
 
   app.post('/api/auth/forgot-password', async (req, res) => {
     try {
-      const { email } = req.body || {};
-      const cleanEmail = String(email || '').trim().toLowerCase();
+      const { identifier, email } = req.body || {};
+      const lookup = String(identifier || email || '').trim();
 
-      if (!cleanEmail || !cleanEmail.includes('@')) {
-        return res.status(400).json({ error: 'Please enter a valid email address.' });
+      if (!lookup) {
+        return res.status(400).json({
+          error: 'Please enter your Player ID or registered Email address.',
+        });
       }
 
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, cleanEmail))
-        .limit(1);
-
+      const user = await findUserByIdentifier(lookup);
       if (!user) {
-        return res
-          .status(404)
-          .json({ error: 'No registered account found with that email address.' });
+        return res.status(404).json({
+          error: 'No registered account found with that Player ID or Email.',
+        });
       }
 
       const { code, tokenHash, expiresAt } = generateResetCode();
 
       await db.insert(passwordResetTokens).values({
         userId: user.id,
-        email: cleanEmail,
+        email: user.email,
         tokenHash,
         expiresAt,
       });
 
       return res.json({
         ok: true,
+        playerId: user.uid,
+        email: user.email,
         message: '6-digit password reset code generated and stored with SHA-256 hash.',
         previewResetCode: code,
         expiresAt: expiresAt.toISOString(),
@@ -537,19 +594,26 @@ async function startServer() {
 
   app.post('/api/auth/reset-password', async (req, res) => {
     try {
-      const { email, code, newPassword } = req.body || {};
-      const cleanEmail = String(email || '').trim().toLowerCase();
+      const { identifier, email, code, newPassword } = req.body || {};
+      const lookup = String(identifier || email || '').trim();
       const cleanCode = String(code || '').trim();
 
-      if (!cleanEmail || !cleanCode || !newPassword) {
-        return res
-          .status(400)
-          .json({ error: 'Email, 6-digit reset code, and new password are required.' });
+      if (!lookup || !cleanCode || !newPassword) {
+        return res.status(400).json({
+          error: 'Player ID / Email, 6-digit reset code, and new password are required.',
+        });
       }
       if (String(newPassword).length < 6) {
-        return res
-          .status(400)
-          .json({ error: 'New password must be at least 6 characters long.' });
+        return res.status(400).json({
+          error: 'New password must be at least 6 characters long.',
+        });
+      }
+
+      const user = await findUserByIdentifier(lookup);
+      if (!user) {
+        return res.status(404).json({
+          error: 'No account found with that Player ID or Email.',
+        });
       }
 
       const expectedHash = hashResetCode(cleanCode);
@@ -560,7 +624,7 @@ async function startServer() {
         .from(passwordResetTokens)
         .where(
           and(
-            eq(passwordResetTokens.email, cleanEmail),
+            eq(passwordResetTokens.userId, user.id),
             eq(passwordResetTokens.tokenHash, expectedHash),
             isNull(passwordResetTokens.usedAt),
             gt(passwordResetTokens.expiresAt, now)
@@ -570,9 +634,9 @@ async function startServer() {
         .limit(1);
 
       if (matchingTokens.length === 0) {
-        return res
-          .status(400)
-          .json({ error: 'Invalid or expired 6-digit reset code.' });
+        return res.status(400).json({
+          error: 'Invalid or expired 6-digit reset code.',
+        });
       }
 
       const tokenRecord = matchingTokens[0];
@@ -582,9 +646,10 @@ async function startServer() {
         .update(users)
         .set({
           passwordHash: newPasswordHash,
+          authProvider: 'email_verified',
           updatedAt: now,
         })
-        .where(eq(users.id, tokenRecord.userId))
+        .where(eq(users.id, user.id))
         .returning();
 
       await db
@@ -610,35 +675,16 @@ async function startServer() {
     }
   });
 
-  app.post('/api/auth/google', async (req: AuthRequest, res) => {
+  app.post('/api/auth/google', requireAuth, async (req: AuthRequest, res) => {
     try {
-      let uid = '';
-      let email = '';
-      let name = '';
-
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split('Bearer ')[1].trim();
-        const parts = token.split('.');
-        if (parts.length === 3) {
-          try {
-            const payloadRaw = Buffer.from(parts[1], 'base64url').toString('utf8');
-            const payload = JSON.parse(payloadRaw);
-            uid = payload.user_id || payload.sub || payload.uid || '';
-            email = payload.email || '';
-            name = payload.name || '';
-          } catch {
-            // fallback to body fields below
-          }
-        }
+      if (!req.user || !req.user.uid) {
+        return res.status(401).json({ error: 'Unauthorized Google token' });
       }
-
-      const body = req.body || {};
-      uid = uid || String(body.uid || `google_${Date.now()}`);
-      email = (email || String(body.email || `${uid}@royalkatti.com`)).trim().toLowerCase();
-      name = name || String(body.displayName || email.split('@')[0]);
-
-      const dbUser = await getOrCreateUser(uid, email, name);
+      const dbUser = await getOrCreateUser(
+        req.user.uid,
+        req.user.email || '',
+        req.user.name
+      );
       const sessionToken = signSessionToken({
         userId: dbUser.id,
         uid: dbUser.uid,
