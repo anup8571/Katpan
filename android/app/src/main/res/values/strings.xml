@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Royal Katti 3D</string>
+    <string name="title_activity_main">Royal Katti 3D</string>
+    <string name="package_name">com.royalkatti.casino</string>
+    <string name="custom_url_scheme">com.royalkatti.casino</string>
+</resources>

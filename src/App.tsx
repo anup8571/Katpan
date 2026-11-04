@@ -47,6 +47,9 @@ import {
 } from './components/MultiplayerModal';
 import { SettingsModal } from './components/SettingsModal';
 import { apiFetch, getWebSocketUrl } from './utils/apiClient';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
+import { StatusBar, Style } from '@capacitor/status-bar';
 
 interface LiveRoomState {
   roomCode: string;
@@ -243,6 +246,32 @@ export default function App() {
       )
     );
   }, []);
+
+  // Native Android Status Bar & Hardware Back Button Integration
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+    StatusBar.setBackgroundColor({ color: '#070a0f' }).catch(() => {});
+
+    const backListenerPromise = CapApp.addListener('backButton', () => {
+      if (isProfileOpen) {
+        setIsProfileOpen(false);
+      } else if (isMultiplayerOpen) {
+        setIsMultiplayerOpen(false);
+      } else if (isSettingsOpen) {
+        setIsSettingsOpen(false);
+      } else if (phase !== 'title') {
+        setPhase('title');
+      } else {
+        CapApp.exitApp();
+      }
+    });
+
+    return () => {
+      backListenerPromise.then((handle) => handle.remove()).catch(() => {});
+    };
+  }, [isProfileOpen, isMultiplayerOpen, isSettingsOpen, phase]);
 
   useEffect(() => {
     if (!authToken) return;

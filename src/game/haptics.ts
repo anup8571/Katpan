@@ -6,6 +6,9 @@
  *    which guarantees tactile feedback on desktop PCs, iOS Safari, and iframe sandboxes.
  */
 
+import { Capacitor } from '@capacitor/core';
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
+
 export type HapticIntensity = 'light' | 'medium' | 'strong';
 
 const HAPTICS_ENABLED_KEY = 'royalkatti_haptics_enabled';
@@ -21,7 +24,8 @@ class HapticsEngine {
 
   constructor() {
     if (typeof window !== 'undefined') {
-      this.supported = 'navigator' in window && 'vibrate' in navigator;
+      this.supported =
+        Capacitor.isNativePlatform() || ('navigator' in window && 'vibrate' in navigator);
       try {
         const storedEnabled = localStorage.getItem(HAPTICS_ENABLED_KEY);
         if (storedEnabled !== null) {
@@ -143,8 +147,30 @@ class HapticsEngine {
     this.lastTriggerTime = Date.now();
     let vibrateResult = false;
 
-    // 1. Hardware Motor (Web Vibration API)
-    if (this.supported && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    // 0. Native Android Motor (Capacitor Haptics API)
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const mult = this.getMultiplier();
+        const primary = typeof pattern === 'number' ? pattern : pattern[0] || 30;
+        if (primary <= 25) {
+          Haptics.impact({ style: ImpactStyle.Light }).catch(() => {});
+        } else if (primary <= 55) {
+          Haptics.impact({
+            style: mult > 1.2 ? ImpactStyle.Heavy : ImpactStyle.Medium,
+          }).catch(() => {});
+        } else {
+          Haptics.notification({
+            type: NotificationType.Success,
+          }).catch(() => {});
+        }
+        vibrateResult = true;
+      } catch {
+        vibrateResult = false;
+      }
+    }
+
+    // 1. Hardware Motor (Web Vibration API fallback)
+    if (!vibrateResult && this.supported && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       try {
         const mult = this.getMultiplier();
         if (typeof pattern === 'number') {
