@@ -33,7 +33,6 @@ import {
 } from './game/rules';
 import { decideBotInitialBet, decideNextBotEqualizeAction } from './game/botAI';
 import { soundEngine } from './game/audio';
-import { haptics } from './game/haptics';
 import { TitleScreen } from './components/TitleScreen';
 import { HUD } from './components/HUD';
 import { ControlDock } from './components/ControlDock';
@@ -589,7 +588,6 @@ export default function App() {
         }
 
         soundEngine.playCardFlick(1.08);
-        haptics.hapticCut();
         const { firstDeck: firstHalf, secondDeck: secondHalf, pointCard: revealedPoint } = splitDeck(
           mainDeckRef.current,
           safeCutIndex
@@ -1287,12 +1285,6 @@ export default function App() {
       const humanWon = humanDeltaVal >= 0;
       setPlayerWonRound(humanWon);
       setHumanDelta(humanDeltaVal);
-
-      if (humanWon) {
-        haptics.hapticWin();
-      } else {
-        haptics.hapticDefeat();
-      }
 
       const newHumanBalance = humanObj ? humanObj.balance : INITIAL_SEAT_COINS;
       setBalance(newHumanBalance);

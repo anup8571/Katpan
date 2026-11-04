@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   X,
   Volume2,
@@ -11,19 +11,11 @@ import {
   ShieldCheck,
   Crown,
   Scissors,
-  Vibrate,
-  Smartphone,
   Sliders,
-  CheckCircle2,
   Sparkles,
-  Info,
-  HelpCircle,
-  AlertTriangle,
-  Radio,
 } from 'lucide-react';
 import { CameraView, SeatId, SeatInfo } from '../game/types';
 import { soundEngine } from '../game/audio';
-import { haptics, HapticIntensity } from '../game/haptics';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -52,12 +44,6 @@ const CAMERA_OPTIONS: { id: CameraView; label: string; desc: string }[] = [
   { id: 'cinematic', label: 'Orbit 3D', desc: 'Dynamic camera' },
 ];
 
-const INTENSITY_OPTIONS: { id: HapticIntensity; label: string; desc: string }[] = [
-  { id: 'light', label: 'Light', desc: '0.7x Gentle' },
-  { id: 'medium', label: 'Medium', desc: '1.1x Crisp' },
-  { id: 'strong', label: 'Strong', desc: '1.6x Punchy' },
-];
-
 const VOLUME_PRESETS = [0, 25, 50, 75, 100];
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -79,24 +65,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onRestartRound,
   onReturnTitle,
 }) => {
-  const [hapticEnabled, setHapticEnabled] = useState<boolean>(() => haptics.isEnabled());
-  const [hapticIntensity, setHapticIntensity] = useState<HapticIntensity>(() =>
-    haptics.getIntensity()
-  );
-  const [testPulseActive, setTestPulseActive] = useState(false);
-  const [showPermGuide, setShowPermGuide] = useState(true);
-  const [lastFeedback, setLastFeedback] = useState<string | null>(null);
-
-  const isVibrateSupported = haptics.isSupported();
-  const diagnostics = haptics.getDiagnostics();
-
-  useEffect(() => {
-    if (isOpen) {
-      setHapticEnabled(haptics.isEnabled());
-      setHapticIntensity(haptics.getIntensity());
-    }
-  }, [isOpen]);
-
   if (!isOpen) return null;
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -106,66 +74,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleSliderRelease = () => {
     soundEngine.playCardFlick(1.0);
-    haptics.hapticTap();
-  };
-
-  const handleToggleHaptics = () => {
-    const next = !hapticEnabled;
-    setHapticEnabled(next);
-    haptics.setEnabled(next);
-    if (next) {
-      triggerTestFeedback('tap', [40]);
-    }
-  };
-
-  const handleSelectIntensity = (intensity: HapticIntensity) => {
-    setHapticIntensity(intensity);
-    haptics.setIntensity(intensity);
-  };
-
-  const triggerTestFeedback = (
-    name: 'tap' | 'chip' | 'rumble',
-    customPattern?: number[]
-  ) => {
-    setTestPulseActive(true);
-
-    let pattern: number | number[] = [60, 40, 120];
-    if (name === 'tap') pattern = 40;
-    else if (name === 'chip') pattern = [35, 30, 35];
-    else if (name === 'rumble') pattern = [90, 50, 160, 60, 220];
-
-    if (customPattern) pattern = customPattern;
-
-    // Trigger synchronously inside direct user click event
-    const motorAccepted = haptics.trigger(pattern);
-
-    if (name === 'chip') {
-      soundEngine.playChipClick();
-    } else {
-      soundEngine.playCardFlick(1.1);
-    }
-
-    const timeStr = new Date().toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-
-    if (motorAccepted) {
-      setLastFeedback(
-        `⚡ [${timeStr}] Hardware motor accepted signal & acoustic sub-bass diaphragm kicked!`
-      );
-    } else if (diagnostics.isMobile) {
-      setLastFeedback(
-        `⚡ [${timeStr}] Vibration sent! Sub-bass speaker kick active. (If phone didn't vibrate, check phone Sound & Vibration settings).`
-      );
-    } else {
-      setLastFeedback(
-        `⚡ [${timeStr}] Acoustic sub-bass tactile kick active! (Note: Laptops & Desktop PCs lack physical vibration motors).`
-      );
-    }
-
-    setTimeout(() => setTestPulseActive(false), 420);
   };
 
   const effectiveVolume = isMuted ? 0 : volume;
@@ -173,14 +81,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   return (
     <div
       role="dialog"
-      aria-label="Royal Casino Settings & Preferences"
+      aria-label="Royal Casino Settings"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md select-none animate-fadeIn"
     >
-      <div
-        className={`w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl bg-gradient-to-b from-[#0a1816] via-[#0b141f] to-[#060b11] border-2 border-amber-500/35 p-4 sm:p-6 shadow-[0_25px_70px_rgba(0,0,0,0.92),0_0_40px_rgba(245,158,11,0.12)] text-slate-100 flex flex-col gap-4.5 transition-transform duration-100 ${
-          testPulseActive ? 'scale-[0.995] translate-y-0.5' : ''
-        }`}
-      >
+      <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl bg-gradient-to-b from-[#0a1816] via-[#0b141f] to-[#060b11] border-2 border-amber-500/35 p-4 sm:p-6 shadow-[0_25px_70px_rgba(0,0,0,0.92),0_0_40px_rgba(245,158,11,0.12)] text-slate-100 flex flex-col gap-4">
         {/* Royal Casino Header */}
         <div className="flex items-center justify-between border-b border-amber-500/20 pb-3.5">
           <div className="flex items-center gap-3">
@@ -198,16 +102,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-emerald-300/80 font-medium">
-                Audio Volume • Haptic Vibrations • 3D Camera • Table Seats
+                Audio Volume • 3D Camera • Table Seats
               </p>
             </div>
           </div>
 
           <button
-            onClick={() => {
-              haptics.hapticTap();
-              onClose();
-            }}
+            onClick={onClose}
             aria-label="Close Settings"
             className="p-2 rounded-xl bg-slate-900/80 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-400 text-slate-300 hover:text-amber-200 cursor-pointer transition-all shadow-sm"
           >
@@ -215,9 +116,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        {/* ======================================================== */}
-        {/* SECTION 1: MASTER SOUND VOLUME CONTROL (0 - 100% BAR) */}
-        {/* ======================================================== */}
+        {/* Master Sound Volume Control (0 - 100% Bar) */}
         <div className="rounded-2xl bg-gradient-to-r from-emerald-950/40 to-slate-900/60 border border-amber-500/25 p-3.5 sm:p-4 flex flex-col gap-3 shadow-inner">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -241,10 +140,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </span>
 
               <button
-                onClick={() => {
-                  haptics.hapticTap();
-                  onToggleMute();
-                }}
+                onClick={onToggleMute}
                 title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
                 className={`p-1.5 rounded-lg border cursor-pointer transition-all ${
                   isMuted
@@ -292,7 +188,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     key={p}
                     onClick={() => {
                       onVolumeChange(p);
-                      haptics.hapticTap();
                       if (p > 0) soundEngine.playChipClick();
                     }}
                     className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition-all border cursor-pointer ${
@@ -309,181 +204,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        {/* ======================================================== */}
-        {/* SECTION 2: TACTILE HAPTIC VIBRATION FEEDBACK */}
-        {/* ======================================================== */}
-        <div className="rounded-2xl bg-gradient-to-r from-slate-900/70 to-emerald-950/30 border border-amber-500/25 p-3.5 sm:p-4 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all ${
-                  hapticEnabled
-                    ? 'bg-amber-500/20 border-amber-400/50 text-amber-300'
-                    : 'bg-white/5 border-white/10 text-slate-500'
-                }`}
-              >
-                <Vibrate className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-xs font-black tracking-wider text-slate-200 uppercase">
-                  Vibration Feedback
-                </span>
-                <p className="text-[10px] text-slate-400">
-                  Dual-layer physical motor &amp; acoustic sub-bass diaphragm kick
-                </p>
-              </div>
-            </div>
-
-            {/* Toggle switch */}
-            <button
-              onClick={handleToggleHaptics}
-              className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none ${
-                hapticEnabled
-                  ? 'bg-amber-500 border-amber-300'
-                  : 'bg-slate-800 border-slate-600'
-              }`}
-              role="switch"
-              aria-checked={hapticEnabled}
-              aria-label="Toggle Vibration Feedback"
-            >
-              <span
-                className={`pointer-events-none inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out mt-0.5 ${
-                  hapticEnabled ? 'translate-x-6' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Intensity selector buttons */}
-          <div className="grid grid-cols-3 gap-2">
-            {INTENSITY_OPTIONS.map((opt) => {
-              const isSelected = hapticIntensity === opt.id && hapticEnabled;
-              return (
-                <button
-                  key={opt.id}
-                  disabled={!hapticEnabled}
-                  onClick={() => handleSelectIntensity(opt.id)}
-                  className={`p-2 rounded-xl border text-center flex flex-col items-center gap-0.5 cursor-pointer transition-all ${
-                    !hapticEnabled
-                      ? 'opacity-40 cursor-not-allowed bg-slate-900/40 border-white/5 text-slate-500'
-                      : isSelected
-                      ? 'bg-gradient-to-b from-amber-500/30 to-amber-600/20 border-amber-400 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
-                      : 'bg-slate-900/60 border-white/10 text-slate-300 hover:border-amber-400/40'
-                  }`}
-                >
-                  <span className="text-xs font-black">{opt.label}</span>
-                  <span className="text-[9px] font-mono text-slate-400">{opt.desc}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Multi-Test Vibration Station */}
-          <div className="flex flex-col gap-2 pt-1 border-t border-white/10">
-            <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
-              <span className="flex items-center gap-1.5">
-                <Radio className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                <span>Test Haptic Triggers:</span>
-              </span>
-              <span className="text-[10px] text-amber-400/90 font-mono">
-                Direct User Gesture
-              </span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={() => triggerTestFeedback('tap')}
-                disabled={!hapticEnabled}
-                className="py-2 px-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-amber-200 text-xs font-bold flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all disabled:opacity-40"
-              >
-                <span>Quick Tap</span>
-                <span className="text-[9px] font-mono text-slate-400">40ms Pulse</span>
-              </button>
-
-              <button
-                onClick={() => triggerTestFeedback('chip')}
-                disabled={!hapticEnabled}
-                className="py-2 px-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 text-xs font-bold flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all disabled:opacity-40"
-              >
-                <span>Chip Click</span>
-                <span className="text-[9px] font-mono text-slate-400">Double Pulse</span>
-              </button>
-
-              <button
-                onClick={() => triggerTestFeedback('rumble')}
-                disabled={!hapticEnabled}
-                className="py-2 px-2 rounded-xl bg-gradient-to-r from-amber-500/25 to-yellow-500/25 hover:brightness-125 border border-yellow-300/50 text-yellow-100 text-xs font-black flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all shadow-[0_0_10px_rgba(245,158,11,0.2)] disabled:opacity-40"
-              >
-                <span>Heavy Rumble</span>
-                <span className="text-[9px] font-mono text-yellow-300/80">
-                  Win Fanfare
-                </span>
-              </button>
-            </div>
-
-            {/* Test Status Banner */}
-            {lastFeedback && (
-              <div className="p-2 rounded-xl bg-slate-950/90 border border-emerald-500/40 text-[10px] text-emerald-300 font-mono flex items-center gap-1.5 animate-fadeIn">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span className="truncate">{lastFeedback}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Browser Permission & Diagnostics Guide (Answers User Question) */}
-          <div className="rounded-xl bg-slate-950/70 border border-amber-500/20 p-2.5 flex flex-col gap-2">
-            <button
-              onClick={() => setShowPermGuide((v) => !v)}
-              className="flex items-center justify-between text-left text-[11px] font-bold text-amber-300 cursor-pointer"
-            >
-              <div className="flex items-center gap-1.5">
-                <HelpCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>Why didn't my browser ask for permission?</span>
-              </div>
-              <span className="text-[10px] text-slate-400 font-mono">
-                {showPermGuide ? 'Hide' : 'Details'}
-              </span>
-            </button>
-
-            {showPermGuide && (
-              <div className="text-[10px] text-slate-300 leading-relaxed flex flex-col gap-1.5 pt-1 border-t border-white/5">
-                <p>
-                  <strong className="text-amber-200">1. No Popup Exists by Web Standard:</strong> The W3C Web Vibration API does <em>not</em> trigger a browser permission prompt (unlike camera/microphone). Browsers execute vibration automatically upon direct touch gestures.
-                </p>
-                <p>
-                  <strong className="text-amber-200">2. Device Hardware &amp; OS Settings:</strong>
-                  {diagnostics.isMobile ? (
-                    <span> You are on a mobile device. If your phone still does not physically vibrate, ensure <strong>Touch Vibration / Haptic Feedback</strong> is enabled in your Android/Phone <em>Settings &gt; Sound &amp; Vibration</em>.</span>
-                  ) : (
-                    <span> Desktop PCs and laptops do <strong>not</strong> contain physical vibration motors. On desktop, our engine automatically kicks the speaker transducer (50Hz sub-bass tactile pulse) to simulate physical impact.</span>
-                  )}
-                </p>
-                <div className="flex flex-wrap items-center gap-2 pt-1 font-mono text-[9px] text-slate-400">
-                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">
-                    API: {isVibrateSupported ? 'Available' : 'Unsupported'}
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">
-                    Device: {diagnostics.isMobile ? 'Mobile Phone' : 'Desktop PC / Mac'}
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">
-                    Diaphragm Kick: Active
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ======================================================== */}
-        {/* SECTION 3: BOT SPEED & 3D CAMERA PERSPECTIVES */}
-        {/* ======================================================== */}
+        {/* Bot Speed & Security */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {/* Bot Speed Mode */}
           <button
-            onClick={() => {
-              haptics.hapticTap();
-              onToggleBotFastMode();
-            }}
+            onClick={onToggleBotFastMode}
             className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${
               botFastMode
                 ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
@@ -545,10 +270,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               return (
                 <button
                   key={c.id}
-                  onClick={() => {
-                    haptics.hapticTap();
-                    onSelectCameraView(c.id);
-                  }}
+                  onClick={() => onSelectCameraView(c.id)}
                   className={`py-2 px-2.5 rounded-xl text-center border cursor-pointer transition-all flex flex-col items-center gap-0.5 ${
                     isSelected
                       ? 'bg-gradient-to-b from-amber-400 to-yellow-500 text-slate-950 border-yellow-200 font-black shadow-[0_0_12px_rgba(245,158,11,0.4)]'
@@ -569,9 +291,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        {/* ======================================================== */}
-        {/* SECTION 4: 6-SEAT TABLE RING SELECTOR (A - F) */}
-        {/* ======================================================== */}
+        {/* 6-Seat Table Ring Selector (A - F) */}
         <div className="rounded-2xl bg-slate-900/60 border border-amber-500/20 p-3.5 flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black text-slate-300 uppercase tracking-wider">
@@ -591,7 +311,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <button
                   key={s.id}
                   onClick={() => {
-                    haptics.hapticTap();
                     onSelectHumanSeat(s.id);
                     onClose();
                   }}
@@ -628,13 +347,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        {/* ======================================================== */}
-        {/* SECTION 5: QUICK ACTIONS (NEW HAND / TITLE) */}
-        {/* ======================================================== */}
+        {/* Quick Actions (New Hand / Title) */}
         <div className="grid grid-cols-2 gap-2 pt-1">
           <button
             onClick={() => {
-              haptics.hapticCardFlick();
               onRestartRound();
               onClose();
             }}
@@ -646,7 +362,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => {
-              haptics.hapticTap();
               onReturnTitle();
               onClose();
             }}
