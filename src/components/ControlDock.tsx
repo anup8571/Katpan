@@ -92,8 +92,8 @@ export const ControlDock: React.FC<ControlDockProps> = ({
     blueTotal > 0;
 
   return (
-    <div className="fixed bottom-2.5 left-1/2 -translate-x-1/2 z-20 w-full max-w-lg px-3 pointer-events-none select-none">
-      <div className="pointer-events-auto bg-slate-950/80 backdrop-blur-xl border border-amber-400/40 rounded-2xl p-3 shadow-[0_12px_40px_rgba(0,0,0,0.8)] flex flex-col gap-2.5">
+    <div className="fixed bottom-2.5 left-1/2 -translate-x-1/2 z-20 w-full max-w-lg px-2 sm:px-3 pointer-events-none select-none">
+      <div className="pointer-events-auto bg-slate-950/80 backdrop-blur-xl border border-amber-400/40 rounded-2xl p-2.5 sm:p-3 shadow-[0_12px_40px_rgba(0,0,0,0.8)] flex flex-col gap-2 sm:gap-2.5 overflow-hidden">
         {/* Live Step Status Strip */}
         <div className="flex items-center justify-between gap-2 px-1">
           <span className="flex items-center gap-1.5 text-xs font-bold text-amber-100 truncate min-w-0">
@@ -121,18 +121,22 @@ export const ControlDock: React.FC<ControlDockProps> = ({
 
         {/* PROMINENT TWO-SIDED POOL TRACKER: RED (SHUFFLER) VS BLUE (CUTTER) */}
         {showPoolTracker && (
-          <div className="bg-slate-900/90 border border-white/10 rounded-xl p-2.5 flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-2 text-xs font-black">
+          <div className="bg-slate-900/90 border border-white/10 rounded-xl p-2 sm:p-2.5 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-1 sm:gap-2 text-xs font-black min-w-0">
               {/* Red Side (Shuffler) */}
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/20 border border-rose-500/50 text-rose-300">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
-                <span className="text-[11px]">RED (SHUFFLER):</span>
-                <span className="font-mono text-white text-xs sm:text-sm font-extrabold">{redTotal} RC</span>
+              <div className="flex-1 min-w-0 flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 rounded-lg bg-rose-500/20 border border-rose-500/50 text-rose-300">
+                <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                <span className="text-[10px] sm:text-[11px] truncate whitespace-nowrap">
+                  RED<span className="hidden sm:inline"> (SHUFFLER)</span>:
+                </span>
+                <span className="font-mono text-white text-[11px] sm:text-sm font-extrabold whitespace-nowrap shrink-0">
+                  {redTotal} RC
+                </span>
               </div>
 
               {/* Status Pill */}
               <div
-                className={`px-2.5 py-1 rounded-full text-[10px] font-black flex items-center gap-1 border ${
+                className={`shrink-0 px-2 sm:px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-black flex items-center gap-1 border whitespace-nowrap ${
                   isBalanced
                     ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-300'
                     : 'bg-amber-500/20 border-amber-400/60 text-amber-200'
@@ -140,22 +144,30 @@ export const ControlDock: React.FC<ControlDockProps> = ({
               >
                 {isBalanced ? (
                   <>
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    <span>BALANCED ({redTotal} RC)</span>
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span>
+                      <span className="hidden sm:inline">BALANCED </span>({redTotal} RC)
+                    </span>
                   </>
                 ) : (
                   <>
-                    <Scale className="w-3 h-3 text-amber-400" />
-                    <span>DIFF: {Math.abs((Number(redTotal) || 0) - (Number(blueTotal) || 0))} RC</span>
+                    <Scale className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span>
+                      DIFF: {Math.abs((Number(redTotal) || 0) - (Number(blueTotal) || 0))} RC
+                    </span>
                   </>
                 )}
               </div>
 
               {/* Blue Side (Cutter) */}
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-500/50 text-sky-300">
-                <span className="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse" />
-                <span className="text-[11px]">BLUE (CUTTER):</span>
-                <span className="font-mono text-white text-xs sm:text-sm font-extrabold">{blueTotal} RC</span>
+              <div className="flex-1 min-w-0 flex items-center justify-center sm:justify-start gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-500/50 text-sky-300">
+                <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-sky-500 animate-pulse shrink-0" />
+                <span className="text-[10px] sm:text-[11px] truncate whitespace-nowrap">
+                  BLUE<span className="hidden sm:inline"> (CUTTER)</span>:
+                </span>
+                <span className="font-mono text-white text-[11px] sm:text-sm font-extrabold whitespace-nowrap shrink-0">
+                  {blueTotal} RC
+                </span>
               </div>
             </div>
 
@@ -243,11 +255,11 @@ export const ControlDock: React.FC<ControlDockProps> = ({
         {isHumanBetTurn && (
           <div className="flex flex-col gap-2">
             {/* Chip Selector Row + Random Bet Button */}
-            <div className="flex items-center justify-between gap-2 bg-slate-900/65 border border-slate-800 rounded-xl px-2.5 py-1.5">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-200">
+            <div className="flex items-center justify-between gap-1 sm:gap-2 bg-slate-900/65 border border-slate-800 rounded-xl px-2 sm:px-2.5 py-1.5 min-w-0">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-200 shrink-0">
                 Wager (RC):
               </span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                 {CHIP_DENOMS.map(({ value, bg, border, text }) => {
                   const isActive = currentBet === value;
                   return (
@@ -263,7 +275,7 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                         borderColor: isActive ? '#fde047' : border,
                         color: text,
                       }}
-                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 border-dashed font-black text-[10px] flex items-center justify-center transition-all cursor-pointer shadow-md tabular-nums ${
+                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 border-dashed font-black text-[10px] flex items-center justify-center transition-all cursor-pointer shadow-md tabular-nums shrink-0 ${
                         isActive
                           ? 'scale-110 -translate-y-0.5 ring-2 ring-amber-300'
                           : 'opacity-80 hover:opacity-100'
@@ -280,9 +292,9 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                     onRandomizeBet();
                   }}
                   title="Pick Random Wager"
-                  className="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-[10px] font-black text-amber-200 flex items-center gap-1 cursor-pointer transition-all"
+                  className="px-1.5 sm:px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-[10px] font-black text-amber-200 flex items-center gap-1 cursor-pointer transition-all shrink-0"
                 >
-                  <Dices className="w-3 h-3 text-amber-300" />
+                  <Dices className="w-3 h-3 text-amber-300 shrink-0" />
                   <span>Random</span>
                 </button>
               </div>
@@ -324,19 +336,19 @@ export const ControlDock: React.FC<ControlDockProps> = ({
               </button>
             ) : (
               /* OTHER TABLE PLAYERS: Bet Red, Bet Blue, or Skip Bet (stays Yellow) */
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                 <button
                   onClick={() => {
                     haptics.hapticChip();
                     onPlaceHumanBet('dealer');
                   }}
-                  className="py-2 px-2 rounded-xl font-black text-xs text-white bg-gradient-to-r from-rose-600 to-pink-600 hover:brightness-110 border border-rose-300 shadow-[0_3px_0_#881337] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
+                  className="py-2 px-1 sm:px-2 rounded-xl font-black text-xs text-white bg-gradient-to-r from-rose-600 to-pink-600 hover:brightness-110 border border-rose-300 shadow-[0_3px_0_#881337] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all min-w-0"
                 >
                   <span className="flex items-center gap-1">
-                    <Crown className="w-3 h-3 text-amber-300" />
-                    <span>BET RED</span>
+                    <Crown className="w-3 h-3 text-amber-300 shrink-0" />
+                    <span className="truncate">BET RED</span>
                   </span>
-                  <span className="text-[10px] font-bold text-rose-100/90 mt-0.5">
+                  <span className="text-[10px] font-bold text-rose-100/90 mt-0.5 truncate">
                     {currentBet} RC
                   </span>
                 </button>
@@ -346,13 +358,13 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                     haptics.hapticChip();
                     onPlaceHumanBet('player');
                   }}
-                  className="py-2 px-2 rounded-xl font-black text-xs text-slate-950 bg-gradient-to-r from-sky-300 via-cyan-300 to-sky-400 hover:brightness-110 border border-sky-100 shadow-[0_3px_0_#0369a1] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
+                  className="py-2 px-1 sm:px-2 rounded-xl font-black text-xs text-slate-950 bg-gradient-to-r from-sky-300 via-cyan-300 to-sky-400 hover:brightness-110 border border-sky-100 shadow-[0_3px_0_#0369a1] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all min-w-0"
                 >
                   <span className="flex items-center gap-1">
-                    <Scissors className="w-3 h-3" />
-                    <span>BET BLUE</span>
+                    <Scissors className="w-3 h-3 shrink-0" />
+                    <span className="truncate">BET BLUE</span>
                   </span>
-                  <span className="text-[10px] font-extrabold text-slate-900/85 mt-0.5">
+                  <span className="text-[10px] font-extrabold text-slate-900/85 mt-0.5 truncate">
                     {currentBet} RC
                   </span>
                 </button>
@@ -362,14 +374,14 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                     haptics.hapticTap();
                     onSkipHumanBet?.();
                   }}
-                  className="py-2 px-2 rounded-xl font-black text-xs text-yellow-300 bg-slate-900 hover:bg-slate-800 border border-yellow-400/50 shadow-[0_3px_0_#713f12] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all"
+                  className="py-2 px-1 sm:px-2 rounded-xl font-black text-xs text-yellow-300 bg-slate-900 hover:bg-slate-800 border border-yellow-400/50 shadow-[0_3px_0_#713f12] active:translate-y-0.5 flex flex-col items-center justify-center leading-tight cursor-pointer transition-all min-w-0"
                   title="Skip this round — indicator remains yellow"
                 >
                   <span className="flex items-center gap-1">
-                    <Ban className="w-3 h-3 text-yellow-400" />
-                    <span>SKIP BET</span>
+                    <Ban className="w-3 h-3 text-yellow-400 shrink-0" />
+                    <span className="truncate">SKIP BET</span>
                   </span>
-                  <span className="text-[9px] font-bold text-yellow-200/70 mt-0.5">
+                  <span className="text-[9px] font-bold text-yellow-200/70 mt-0.5 truncate">
                     Stay Yellow
                   </span>
                 </button>
@@ -450,10 +462,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                     haptics.hapticChip();
                     onQuickBalance?.();
                   }}
-                  className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-400 hover:brightness-110 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all flex items-center justify-center gap-1.5"
+                  className="w-full py-2 px-2.5 sm:px-3 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-400 hover:brightness-110 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all flex items-center justify-center gap-1.5"
                 >
-                  <Scale className="w-3.5 h-3.5" />
-                  <span>EQUALISE &amp; MATCH POOLS ({Math.abs((Number(redTotal) || 0) - (Number(blueTotal) || 0))} RC Difference)</span>
+                  <Scale className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">EQUALISE &amp; MATCH POOLS ({Math.abs((Number(redTotal) || 0) - (Number(blueTotal) || 0))} RC)</span>
                 </button>
               </div>
             ) : (
