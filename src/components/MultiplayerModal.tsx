@@ -16,6 +16,8 @@ import {
   UserPlus,
   Link2,
   BellRing,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 import { SeatId } from '../game/types';
 import { apiFetch } from '../utils/apiClient';
@@ -68,6 +70,8 @@ interface MultiplayerModalProps {
   onLeaveRoom: () => void;
   onSendChat: (text: string) => void;
   onSelectSeat: (seatId: SeatId) => void;
+  onOpenVoiceChat?: () => void;
+  isVoiceConnected?: boolean;
 }
 
 const QUICK_EMOTES = [
@@ -94,6 +98,8 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
   onLeaveRoom,
   onSendChat,
   onSelectSeat,
+  onOpenVoiceChat,
+  isVoiceConnected = false,
 }) => {
   const [rooms, setRooms] = useState<MultiplayerRoomSummary[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(false);
@@ -435,6 +441,37 @@ export const MultiplayerModal: React.FC<MultiplayerModalProps> = ({
                   <span>Share Invite</span>
                 </button>
               </div>
+
+              {/* Table Voice Chat Banner / Button */}
+              {onOpenVoiceChat && (
+                <button
+                  type="button"
+                  onClick={onOpenVoiceChat}
+                  className={`w-full py-2.5 px-3.5 rounded-xl border flex items-center justify-between text-xs font-bold cursor-pointer transition-all ${
+                    isVoiceConnected
+                      ? 'bg-emerald-950/60 border-emerald-400/50 text-emerald-200 hover:bg-emerald-900/60'
+                      : 'bg-slate-900/80 border-amber-400/30 text-amber-200 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                        isVoiceConnected
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : 'bg-amber-500/20 text-amber-300'
+                      }`}
+                    >
+                      <Mic className="w-3.5 h-3.5" />
+                    </div>
+                    <span>
+                      {isVoiceConnected ? 'Table Voice Chat Active' : 'Join Table Voice Chat'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-md bg-white/10 text-white">
+                    {isVoiceConnected ? 'Open Settings' : 'Connect'}
+                  </span>
+                </button>
+              )}
 
               {/* Direct In-App Player Invitation by Player ID or Email */}
               <form

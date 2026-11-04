@@ -12,6 +12,8 @@ import {
   Check,
   BellRing,
   X,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 import { RoomInvitationItem } from './MultiplayerModal';
@@ -37,6 +39,11 @@ interface HUDProps {
   onOpenMultiplayer: () => void;
   onOpenProfile: () => void;
   onOpenSettings: () => void;
+  onOpenVoiceChat?: () => void;
+  isVoiceConnected?: boolean;
+  isVoiceMuted?: boolean;
+  isSomeoneSpeaking?: boolean;
+  connectedVoiceCount?: number;
 }
 
 export const HUD: React.FC<HUDProps> = ({
@@ -60,6 +67,11 @@ export const HUD: React.FC<HUDProps> = ({
   onOpenMultiplayer,
   onOpenProfile,
   onOpenSettings,
+  onOpenVoiceChat,
+  isVoiceConnected = false,
+  isVoiceMuted = false,
+  isSomeoneSpeaking = false,
+  connectedVoiceCount = 0,
 }) => {
   const [copiedRoomCode, setCopiedRoomCode] = useState(false);
 
@@ -110,6 +122,58 @@ export const HUD: React.FC<HUDProps> = ({
                 )}
               </button>
             </div>
+          )}
+
+          {/* Voice Chat Pill in Header */}
+          {activeRoomCode && (
+            <button
+              type="button"
+              onClick={onOpenVoiceChat}
+              title={
+                isVoiceConnected
+                  ? isVoiceMuted
+                    ? 'Voice Chat (Muted)'
+                    : 'Voice Chat (Connected)'
+                  : 'Open Voice Chat'
+              }
+              className={`flex items-center gap-1.5 backdrop-blur-md border rounded-2xl px-2.5 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.55)] cursor-pointer transition-all ${
+                isVoiceConnected
+                  ? isSomeoneSpeaking
+                    ? 'bg-emerald-950/80 border-emerald-400 text-emerald-300 shadow-[0_0_16px_rgba(52,211,153,0.4)]'
+                    : isVoiceMuted
+                    ? 'bg-rose-950/70 border-rose-400/50 text-rose-300'
+                    : 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                  : 'bg-slate-950/70 border-white/20 text-slate-300 hover:text-white'
+              }`}
+            >
+              {isVoiceConnected ? (
+                isVoiceMuted ? (
+                  <MicOff className="w-3.5 h-3.5 text-rose-400" />
+                ) : (
+                  <Mic
+                    className={`w-3.5 h-3.5 ${
+                      isSomeoneSpeaking ? 'animate-pulse text-emerald-400' : 'text-emerald-300'
+                    }`}
+                  />
+                )
+              ) : (
+                <Mic className="w-3.5 h-3.5 text-amber-300" />
+              )}
+              <span className="text-[10px] sm:text-xs font-bold tracking-tight">
+                {isVoiceConnected
+                  ? isSomeoneSpeaking
+                    ? 'Speaking'
+                    : isVoiceMuted
+                    ? 'Muted'
+                    : 'Voice'
+                  : 'Voice'}
+              </span>
+              {connectedVoiceCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-emerald-500/30 text-emerald-300 text-[9px] font-mono font-bold flex items-center justify-center">
+                  {connectedVoiceCount}
+                </span>
+              )}
+            </button>
           )}
         </div>
 

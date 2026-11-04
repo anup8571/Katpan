@@ -1242,5 +1242,90 @@ export default async function handler(
     return sendJson(res, 200, { ok: true });
   }
 
+  if (pathname === '/api/ice-servers' && method === 'GET') {
+    const iceServers: any[] = [
+      {
+        urls: [
+          'stun:stun.l.google.com:19302',
+          'stun:stun1.l.google.com:19302',
+          'stun:stun2.l.google.com:19302',
+          'stun:stun3.l.google.com:19302',
+          'stun:stun4.l.google.com:19302',
+        ],
+      },
+    ];
+    const turnUrls = (process.env.TURN_URLS || process.env.VITE_TURN_URLS || '').trim();
+    const turnUsername = (process.env.TURN_USERNAME || process.env.VITE_TURN_USERNAME || '').trim();
+    const turnCredential = (process.env.TURN_CREDENTIAL || process.env.VITE_TURN_CREDENTIAL || '').trim();
+    if (turnUrls) {
+      const urls = turnUrls.split(/[,;\s]+/).map((u) => u.trim()).filter(Boolean);
+      if (urls.length > 0) {
+        iceServers.push({
+          urls,
+          ...(turnUsername ? { username: turnUsername } : {}),
+          ...(turnCredential ? { credential: turnCredential } : {}),
+        });
+      }
+    }
+    return sendJson(res, 200, { iceServers, hasTurn: Boolean(turnUrls) });
+  }
+
+  if (pathname === '/api/rooms/signal') {
+    const storeAny = store as any;
+    if (!Array.isArray(storeAny.voiceSignals)) {
+      storeAny.voiceSignals = [];
+    }
+    const purgeTime = Date.now() - 45 * 1000;
+    storeAny.voiceSignals = storeAny.voiceSignals.filter((s: any) => s.timestamp > purgeTime);
+
+    if (method === 'POST') {
+      const roomCode = String(body.roomCode || '').trim().toUpperCase();
+      const fromSeat = String(body.fromSeat || '').trim().toUpperCase();
+      const toSeat = String(body.toSeat || '').trim().toUpperCase();
+      const signal = body.signal;
+      const fromPlayerName = String(body.fromPlayerName || 'Player').trim();
+
+      if (!roomCode || !fromSeat || !toSeat || !signal) {
+        return sendJson(res, 400, { error: 'roomCode, fromSeat, toSeat, and signal are required.' });
+      }
+
+      const signalItem = {
+        id: `sig-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        roomCode,
+        fromSeat,
+        toSeat,
+        signal,
+        fromPlayerName,
+        timestamp: Date.now(),
+      };
+
+      storeAny.voiceSignals.push(signalItem);
+      if (storeAny.voiceSignals.length > 200) {
+        storeAny.voiceSignals = storeAny.voiceSignals.slice(-150);
+      }
+      saveServerStore(store);
+      return sendJson(res, 200, { ok: true, id: signalItem.id });
+    }
+
+    if (method === 'GET') {
+      const roomCode = String(parsedUrl.searchParams.get('roomCode') || '').trim().toUpperCase();
+      const seat = String(parsedUrl.searchParams.get('seat') || '').trim().toUpperCase();
+      const since = Number(parsedUrl.searchParams.get('since') || 0);
+
+      if (!roomCode || !seat) {
+        return sendJson(res, 400, { error: 'roomCode and seat parameters are required.' });
+      }
+
+      const signals = storeAny.voiceSignals.filter(
+        (s: any) =>
+          s.roomCode === roomCode &&
+          (s.toSeat === seat || s.toSeat === 'ALL') &&
+          s.timestamp > since
+      );
+
+      return sendJson(res, 200, { signals, now: Date.now() });
+    }
+  }
+
   return sendJson(res, 404, { error: 'Not found' });
 }

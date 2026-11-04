@@ -1401,6 +1401,83 @@ async function startServer() {
     return res.json({ ok: true });
   });
 
+  app.get('/api/ice-servers', async (_req, res) => {
+    const iceServers: any[] = [
+      {
+        urls: [
+          'stun:stun.l.google.com:19302',
+          'stun:stun1.l.google.com:19302',
+          'stun:stun2.l.google.com:19302',
+          'stun:stun3.l.google.com:19302',
+          'stun:stun4.l.google.com:19302',
+        ],
+      },
+    ];
+    const turnUrls = (process.env.TURN_URLS || process.env.VITE_TURN_URLS || '').trim();
+    const turnUsername = (process.env.TURN_USERNAME || process.env.VITE_TURN_USERNAME || '').trim();
+    const turnCredential = (process.env.TURN_CREDENTIAL || process.env.VITE_TURN_CREDENTIAL || '').trim();
+    if (turnUrls) {
+      const urls = turnUrls.split(/[,;\s]+/).map((u) => u.trim()).filter(Boolean);
+      if (urls.length > 0) {
+        iceServers.push({
+          urls,
+          ...(turnUsername ? { username: turnUsername } : {}),
+          ...(turnCredential ? { credential: turnCredential } : {}),
+        });
+      }
+    }
+    return res.json({ iceServers, hasTurn: Boolean(turnUrls) });
+  });
+
+  const voiceSignalsBuffer: any[] = [];
+  app.post('/api/rooms/signal', async (req, res) => {
+    const roomCode = String(req.body?.roomCode || '').trim().toUpperCase();
+    const fromSeat = String(req.body?.fromSeat || '').trim().toUpperCase();
+    const toSeat = String(req.body?.toSeat || '').trim().toUpperCase();
+    const signal = req.body?.signal;
+    const fromPlayerName = String(req.body?.fromPlayerName || 'Player').trim();
+
+    if (!roomCode || !fromSeat || !toSeat || !signal) {
+      return res.status(400).json({ error: 'roomCode, fromSeat, toSeat, and signal are required.' });
+    }
+
+    const item = {
+      id: `sig-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      roomCode,
+      fromSeat,
+      toSeat,
+      signal,
+      fromPlayerName,
+      timestamp: Date.now(),
+    };
+    voiceSignalsBuffer.push(item);
+    if (voiceSignalsBuffer.length > 300) {
+      voiceSignalsBuffer.splice(0, 100);
+    }
+
+    broadcastToRoom(roomCode, {
+      type: 'room:voice_signal',
+      signalItem: item,
+    });
+
+    return res.json({ ok: true, id: item.id });
+  });
+
+  app.get('/api/rooms/signal', async (req, res) => {
+    const roomCode = String(req.query.roomCode || '').trim().toUpperCase();
+    const seat = String(req.query.seat || '').trim().toUpperCase();
+    const since = Number(req.query.since || 0);
+
+    if (!roomCode || !seat) {
+      return res.status(400).json({ error: 'roomCode and seat parameters are required.' });
+    }
+
+    const matched = voiceSignalsBuffer.filter(
+      (s) => s.roomCode === roomCode && (s.toSeat === seat || s.toSeat === 'ALL') && s.timestamp > since
+    );
+    return res.json({ signals: matched, now: Date.now() });
+  });
+
   // =========================================================================
   // 4. HTTP + WEBSOCKET SERVER ATTACHMENT ON PORT 3000
   // =========================================================================
@@ -1585,6 +1662,13 @@ async function startServer() {
             type: 'room:chat',
             roomCode: peer.roomCode,
             message: chatEntry,
+          });
+        } else if (msg.type === 'room:voice_signal') {
+          const peer = peers.get(ws);
+          if (!peer) return;
+          broadcastToRoom(peer.roomCode, {
+            type: 'room:voice_signal',
+            signalItem: msg.signalItem,
           });
         } else if (msg.type === 'room:leave') {
           const peer = peers.get(ws);

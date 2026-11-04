@@ -577,6 +577,74 @@ async function handleClientFallback(path: string, init?: RequestInit): Promise<R
     return jsonRes({ rooms: roomsList });
   }
 
+  if (path === '/api/ice-servers' && method === 'GET') {
+    const iceServers = [
+      {
+        urls: [
+          'stun:stun.l.google.com:19302',
+          'stun:stun1.l.google.com:19302',
+          'stun:stun2.l.google.com:19302',
+          'stun:stun3.l.google.com:19302',
+          'stun:stun4.l.google.com:19302',
+        ],
+      },
+    ];
+    const turnUrls = (import.meta as any).env?.VITE_TURN_URLS || '';
+    const turnUsername = (import.meta as any).env?.VITE_TURN_USERNAME || '';
+    const turnCredential = (import.meta as any).env?.VITE_TURN_CREDENTIAL || '';
+    if (turnUrls) {
+      iceServers.push({
+        urls: turnUrls.split(/[,;\s]+/).map((u: string) => u.trim()).filter(Boolean),
+        ...(turnUsername ? { username: turnUsername } : {}),
+        ...(turnCredential ? { credential: turnCredential } : {}),
+      });
+    }
+    return jsonRes({ iceServers, hasTurn: Boolean(turnUrls) });
+  }
+
+  if (path.startsWith('/api/rooms/signal')) {
+    const SIGNALS_KEY = 'rk_voice_signals_v1';
+    let signals: any[] = [];
+    try {
+      const raw = sessionStorage.getItem(SIGNALS_KEY);
+      if (raw) signals = JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+    const cutoff = Date.now() - 45 * 1000;
+    signals = signals.filter((s) => s.timestamp > cutoff);
+
+    if (method === 'POST') {
+      const signalItem = {
+        id: `sig-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        roomCode: String(body.roomCode || '').trim().toUpperCase(),
+        fromSeat: String(body.fromSeat || '').trim().toUpperCase(),
+        toSeat: String(body.toSeat || '').trim().toUpperCase(),
+        signal: body.signal,
+        fromPlayerName: String(body.fromPlayerName || 'Player').trim(),
+        timestamp: Date.now(),
+      };
+      signals.push(signalItem);
+      try {
+        sessionStorage.setItem(SIGNALS_KEY, JSON.stringify(signals.slice(-100)));
+      } catch {
+        // ignore
+      }
+      return jsonRes({ ok: true, id: signalItem.id });
+    }
+
+    if (method === 'GET') {
+      const url = new URL(path, 'http://localhost');
+      const roomCode = String(url.searchParams.get('roomCode') || '').trim().toUpperCase();
+      const seat = String(url.searchParams.get('seat') || '').trim().toUpperCase();
+      const since = Number(url.searchParams.get('since') || 0);
+      const matched = signals.filter(
+        (s) => s.roomCode === roomCode && (s.toSeat === seat || s.toSeat === 'ALL') && s.timestamp > since
+      );
+      return jsonRes({ signals: matched, now: Date.now() });
+    }
+  }
+
   return jsonRes({ ok: true });
 }
 

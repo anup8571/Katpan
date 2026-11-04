@@ -13,6 +13,8 @@ import {
   Plus,
   Ban,
   CheckCircle2,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 
@@ -43,6 +45,10 @@ interface ControlDockProps {
   isBalanced?: boolean;
   onQuickBalance?: () => void;
   onAdjustBet?: (side: 'dealer' | 'player', delta: number) => void;
+  onToggleVoiceMic?: () => void;
+  isVoiceConnected?: boolean;
+  isVoiceMuted?: boolean;
+  isLocalSpeaking?: boolean;
 }
 
 const CHIP_DENOMS = [
@@ -79,6 +85,10 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   onSkipHumanBet,
   onQuickBalance,
   onAdjustBet,
+  onToggleVoiceMic,
+  isVoiceConnected = false,
+  isVoiceMuted = false,
+  isLocalSpeaking = false,
 }) => {
   const isHumanDealer = dealerSeat === humanSeat;
   const isHumanCutter = cutterSeat === humanSeat;
@@ -105,18 +115,38 @@ export const ControlDock: React.FC<ControlDockProps> = ({
             <span className="truncate">{statusText}</span>
           </span>
 
-          {/* Quick Bot Speed 2x Pill Toggle in Dock */}
-          <button
-            onClick={onToggleBotFastMode}
-            className={`px-2 py-0.5 rounded-full text-[10px] font-black border transition-all cursor-pointer shrink-0 ${
-              botFastMode
-                ? 'bg-amber-400 text-slate-950 border-yellow-200'
-                : 'bg-white/5 text-slate-400 border-white/10 hover:text-slate-200'
-            }`}
-            title="Toggle Fast Auto Dealing Speed"
-          >
-            {botFastMode ? '⚡ 2X' : '1X'}
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Quick Mic Toggle if in Voice Chat */}
+            {isVoiceConnected && onToggleVoiceMic && (
+              <button
+                type="button"
+                onClick={onToggleVoiceMic}
+                title={isVoiceMuted ? 'Unmute Mic' : 'Mute Mic'}
+                className={`p-1 rounded-full border text-[10px] font-black transition-all cursor-pointer flex items-center justify-center ${
+                  isVoiceMuted
+                    ? 'bg-rose-500/20 border-rose-400/50 text-rose-300 hover:bg-rose-500/30'
+                    : isLocalSpeaking
+                    ? 'bg-emerald-500/30 border-emerald-400 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.5)]'
+                    : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30'
+                }`}
+              >
+                {isVoiceMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+              </button>
+            )}
+
+            {/* Quick Bot Speed 2x Pill Toggle in Dock */}
+            <button
+              onClick={onToggleBotFastMode}
+              className={`px-2 py-0.5 rounded-full text-[10px] font-black border transition-all cursor-pointer shrink-0 ${
+                botFastMode
+                  ? 'bg-amber-400 text-slate-950 border-yellow-200'
+                  : 'bg-white/5 text-slate-400 border-white/10 hover:text-slate-200'
+              }`}
+              title="Toggle Fast Auto Dealing Speed"
+            >
+              {botFastMode ? '⚡ 2X' : '1X'}
+            </button>
+          </div>
         </div>
 
         {/* POOL EQUALIZATION MONITOR (Two-Sided Red vs Blue Totalizer) */}

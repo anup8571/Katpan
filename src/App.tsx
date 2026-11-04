@@ -45,6 +45,9 @@ import {
   RoomInvitationItem,
 } from './components/MultiplayerModal';
 import { SettingsModal } from './components/SettingsModal';
+import { VoiceChatModal } from './components/VoiceChatModal';
+import { voiceChatService } from './services/voiceChat';
+import { useVoiceChat } from './hooks/useVoiceChat';
 import { apiFetch, getWebSocketUrl } from './utils/apiClient';
 
 interface LiveRoomState {
@@ -75,6 +78,8 @@ export default function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMultiplayerOpen, setIsMultiplayerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isVoiceOpen, setIsVoiceOpen] = useState(false);
+  const voiceState = useVoiceChat();
 
   // User Auth & Profile State
   const [authToken, setAuthToken] = useState<string | null>(() =>
@@ -302,6 +307,8 @@ export default function App() {
             if (prev.some((i) => i.id === inv.id)) return prev;
             return [inv, ...prev].slice(0, 10);
           });
+        } else if (msg.type === 'room:voice_signal' && msg.signalItem) {
+          voiceChatService.handleIncomingSignal(msg.signalItem);
         }
       } catch {
         // Ignore malformed messages
@@ -415,6 +422,7 @@ export default function App() {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'room:leave' }));
     }
+    voiceChatService.leaveRoom();
     setActiveRoom(null);
     setChatMessages([]);
   }, [activeRoom, currentUser]);
@@ -519,6 +527,13 @@ export default function App() {
     const timer = window.setInterval(pollInvitesAndRoom, 5000);
     return () => window.clearInterval(timer);
   }, [currentUser, activeRoom?.roomCode]);
+
+  // Synchronize WebRTC Voice Chat peers when room seats change
+  useEffect(() => {
+    if (activeRoom?.occupiedSeats && voiceState.isConnected) {
+      voiceChatService.syncOccupiedSeats(activeRoom.occupiedSeats);
+    }
+  }, [activeRoom?.occupiedSeats, voiceState.isConnected]);
 
   // Auto-join room when user opens a shared Invite Link (?room=RK-XXXX)
   useEffect(() => {
@@ -1555,6 +1570,16 @@ export default function App() {
           onOpenMultiplayer={() => setIsMultiplayerOpen(true)}
           onOpenProfile={() => setIsProfileOpen(true)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenVoiceChat={() => setIsVoiceOpen(true)}
+          isVoiceConnected={voiceState.isConnected}
+          isVoiceMuted={voiceState.isMicMuted}
+          isSomeoneSpeaking={
+            voiceState.isLocalSpeaking ||
+            Object.values(voiceState.peers).some((p) => p.isSpeaking)
+          }
+          connectedVoiceCount={
+            Object.values(voiceState.peers).filter((p) => p.status === 'connected').length
+          }
         />
       )}
 
@@ -1590,6 +1615,10 @@ export default function App() {
           isBalanced={calculatePoolTotals(seats).isBalanced}
           onQuickBalance={handleQuickBalance}
           onAdjustBet={handleAdjustBet}
+          onToggleVoiceMic={() => voiceChatService.toggleMic()}
+          isVoiceConnected={voiceState.isConnected}
+          isVoiceMuted={voiceState.isMicMuted}
+          isLocalSpeaking={voiceState.isLocalSpeaking}
         />
       )}
 
@@ -1654,6 +1683,22 @@ export default function App() {
         onLeaveRoom={handleLeaveRoom}
         onSelectSeat={handleSelectHumanSeat}
         onSendChat={handleSendChat}
+        onOpenVoiceChat={() => setIsVoiceOpen(true)}
+        isVoiceConnected={voiceState.isConnected}
+      />
+
+      {/* Table WebRTC Voice Chat Modal */}
+      <VoiceChatModal
+        isOpen={isVoiceOpen}
+        onClose={() => setIsVoiceOpen(false)}
+        activeRoomCode={activeRoom?.roomCode || null}
+        occupiedSeats={activeRoom?.occupiedSeats || {}}
+        humanSeat={humanSeat}
+        playerName={
+          currentUser?.displayName ||
+          currentUser?.email?.split('@')[0] ||
+          `VIP-${humanSeat}`
+        }
       />
 
       {/* Royal Casino Themed Settings Modal */}

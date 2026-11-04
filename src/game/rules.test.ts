@@ -136,9 +136,9 @@ test('6-seat anti-clockwise rotation follows Rule 2: A deals, B cuts -> if B win
   assert.equal(bLoses.nextCutter, 'C');
 });
 
-test('getBettingOrder starts with Cutter and proceeds anti-clockwise excluding Dealer', () => {
-  assert.deepEqual(getBettingOrder('A', 'B'), ['B', 'C', 'D', 'E', 'F']);
-  assert.deepEqual(getBettingOrder('A', 'C'), ['C', 'D', 'E', 'F', 'B']);
+test('getBettingOrder starts with Cutter, then Dealer, then anti-clockwise remaining seats', () => {
+  assert.deepEqual(getBettingOrder('A', 'B'), ['B', 'A', 'C', 'D', 'E', 'F']);
+  assert.deepEqual(getBettingOrder('A', 'C'), ['C', 'A', 'D', 'E', 'F', 'B']);
 });
 
 test('legacy helpers remain valid', () => {
