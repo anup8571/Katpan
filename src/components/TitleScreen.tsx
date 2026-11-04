@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, User, LogIn } from 'lucide-react';
+import { Users, User, LogIn, Settings } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface TitleScreenProps {
@@ -7,6 +7,7 @@ interface TitleScreenProps {
   onJoinByRoomCode?: (roomCode: string) => void;
   onOpenMultiplayer?: () => void;
   onOpenProfile?: () => void;
+  onOpenSettings?: () => void;
   userDisplayName?: string | null;
 }
 
@@ -15,6 +16,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onJoinByRoomCode,
   onOpenMultiplayer,
   onOpenProfile,
+  onOpenSettings,
   userDisplayName,
 }) => {
   const [roomCodeInput, setRoomCodeInput] = useState('');
@@ -50,6 +52,16 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           >
             <User className="w-3.5 h-3.5" />
             <span>{userDisplayName || 'Login / Register'}</span>
+          </button>
+        )}
+        {onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            className="p-2 rounded-2xl bg-slate-950/40 backdrop-blur-md border border-amber-400/30 hover:border-amber-400 text-amber-300 hover:text-white transition-all cursor-pointer shadow-lg"
+            title="Settings & Audio"
+            aria-label="Settings"
+          >
+            <Settings className="w-3.5 h-3.5" />
           </button>
         )}
       </div>

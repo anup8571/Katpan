@@ -1,6 +1,6 @@
 {
-  "summary": "Redesign settings panel in royal Indian casino theme with 0-100% volume slider bar and tactile haptic vibration feedback engine.",
-  "updatedAt": "2026-11-03T20:51:53.240588390Z",
+  "summary": "Fixed the settings button placement and responsiveness:\n1. Re-architected HUD top header layout to use explicit safe margins (top-2 left-2 right-2) with compact pill sizing and icon-only profile on mobile, eliminating horizontal overflow that was pushing the settings button past the right edge of the screen.\n2. Made the settings button shrink-0, golden-bordered, and permanently anchored inside the visible mobile screen.\n3. Added a quick-access Settings button directly inside the ControlDock footer utility strip next to the 2X deal speed toggle.\n4. Added the Settings button to the TitleScreen glass bar.",
+  "updatedAt": "2026-11-04T16:57:25.049387652Z",
   "requestFeedback": true,
   "userFacing": true
 }

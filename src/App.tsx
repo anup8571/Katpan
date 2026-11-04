@@ -1538,6 +1538,7 @@ export default function App() {
           }}
           onOpenMultiplayer={() => setIsMultiplayerOpen(true)}
           onOpenProfile={() => setIsProfileOpen(true)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           userDisplayName={currentUser?.displayName}
         />
       )}
@@ -1609,6 +1610,7 @@ export default function App() {
           isAutoDealing={isAutoDealing}
           botFastMode={botFastMode}
           onToggleBotFastMode={() => setBotFastMode((v) => !v)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           isBusy={isBusy}
           redTotal={calculatePoolTotals(seats).redTotal}
           blueTotal={calculatePoolTotals(seats).blueTotal}
